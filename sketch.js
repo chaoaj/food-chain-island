@@ -80,12 +80,12 @@ function setup() {
 
   // create UI button
   restartButton = createButton('Restart');
-  restartButton.position(pagePadding, pagePadding);
+  restartButton.position(pagePadding + 75, pagePadding + 25);
   restartButton.mousePressed(initGame);
 
   // layout selector for alternative starting boards
   layoutSelect = createSelect();
-  layoutSelect.position(pagePadding + 100, pagePadding);
+  layoutSelect.position(pagePadding + 175, pagePadding + 25);
   layoutSelect.option('1 - Default', '1');
   layoutSelect.option('2 - Zig', '2');
   layoutSelect.option('3 - Circle', '3');
@@ -98,7 +98,7 @@ function setup() {
 
   // Finish button (evaluates final score / forces game end)
   finishButton = createButton('Finish');
-  finishButton.position(pagePadding + 220, pagePadding);
+  finishButton.position(pagePadding + 295, pagePadding + 25);
   finishButton.mousePressed(finishGame);
 
   initGame();
@@ -195,10 +195,21 @@ function initGame() {
   seaUsed = { whale: false, shark: false };
   gameOver = false;
 
+  // Reposition UI elements to account for layout/resize (keep +75px horizontal offset)
+  if (restartButton) restartButton.position(pagePadding + 75, pagePadding + 25);
+  if (layoutSelect) layoutSelect.position(pagePadding + 175, pagePadding + 25);
   // position finish button under the grid
   if (finishButton) {
-    const finishY = gridY + ROWS * (dispTileH + spacing) + 40;
-    finishButton.position(gridX, finishY);
+    // compute whale/shark image height to mirror draw() positioning when sea panel is below
+    const whaleW = dispTileW;
+    const whaleH = Math.floor(whaleW * (sheetTileH / sheetTileW));
+    let messageY = gridY + ROWS * (dispTileH + spacing) + 20;
+    if (seaOrientation === 'below') {
+      const bottomSea = seaY + whaleH + 12;
+      messageY = bottomSea + 20;
+    }
+    const finishY = messageY + 91; // move finish button further down by 25px
+    finishButton.position(gridX + 75, finishY);
   }
 }
 
@@ -391,6 +402,8 @@ function canEat(fromIdx, toIdx, ignoreNextRules = false) {
   if (fromIdx < 0 || toIdx < 0) return { ok: false, msg: 'Invalid selection' };
   if (grid[fromIdx].length === 0) return { ok: false, msg: 'No predator selected' };
   if (grid[toIdx].length === 0) return { ok: false, msg: 'No prey at target' };
+  // cannot eat onto a non-landable tile (Y spots are pass-through only)
+  if (!isLandable(toIdx)) return { ok: false, msg: 'Cannot eat onto a non-landable tile.' };
   const predId = grid[fromIdx][grid[fromIdx].length - 1];
   const preyId = grid[toIdx][grid[toIdx].length - 1];
   const predVal = cardDefs[predId].value;
@@ -664,6 +677,11 @@ function handleActionClick(i) {
         // perform eat (respect gator stacking)
         const newIdx = performEat(src, i, { useGator: can.useGator });
 
+        // clear the one-time flags that applied BEFORE this eat (consume them)
+        if (prePendingNext) pendingNext = null;
+        if (prePendingRaccoon) pendingRaccoonTurns = 0;
+        if (prePolarBearSkip) polarBearSkip = false;
+
         // resolve predator ability for the eater
         runAbilityAt(newIdx);
 
@@ -672,11 +690,6 @@ function handleActionClick(i) {
           if (actionMode) queuedRaccoonDiscard = true;
           else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
         }
-
-        // clear the one-time flags that applied BEFORE this eat
-        if (prePendingNext) pendingNext = null;
-        if (prePendingRaccoon) pendingRaccoonTurns = 0;
-        if (prePolarBearSkip) polarBearSkip = false;
 
         actionMode = null;
         message = 'Ability used.';
@@ -889,6 +902,12 @@ function handleGridClick(i) {
       const newIdx = performEat(seaSource, i, { useGator: false });
       seaUsed.shark = true; seaMode = null; seaSource = -1;
       message = 'Shark used to help an animal eat. Continue.';
+
+      // clear pre-turn flags (consume flags that applied BEFORE this eat)
+      if (prePendingNext) pendingNext = null;
+      if (prePendingRaccoon) pendingRaccoonTurns = 0;
+      if (prePolarBearSkip) polarBearSkip = false;
+
       // Resolve predator ability for the eater
       runAbilityAt(newIdx);
 
@@ -897,11 +916,6 @@ function handleGridClick(i) {
         if (actionMode) queuedRaccoonDiscard = true;
         else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
       }
-
-      // clear pre-turn flags
-      if (prePendingNext) pendingNext = null;
-      if (prePendingRaccoon) pendingRaccoonTurns = 0;
-      if (prePolarBearSkip) polarBearSkip = false;
 
       checkEnd();
       return;
@@ -930,14 +944,15 @@ function handleGridClick(i) {
     const newIdx = performEat(seaSource, i, { useGator: false });
     seaUsed.shark = true; seaMode = null; seaSource = -1;
     message = 'Shark used to help an animal eat. Continue.';
+    // clear pre-turn flags (consume flags that applied BEFORE this eat)
+    if (prePendingNext) pendingNext = null;
+    if (prePendingRaccoon) pendingRaccoonTurns = 0;
+    if (prePolarBearSkip) polarBearSkip = false;
     runAbilityAt(newIdx);
     if (prePendingRaccoon && (predVal - preyVal === 1)) {
       if (actionMode) queuedRaccoonDiscard = true;
       else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
     }
-    if (prePendingNext) pendingNext = null;
-    if (prePendingRaccoon) pendingRaccoonTurns = 0;
-    if (prePolarBearSkip) polarBearSkip = false;
     checkEnd();
     return;
   }
@@ -969,6 +984,11 @@ function handleGridClick(i) {
   // perform eat; can.useGator toggles reversed stacking
   const newIdx = performEat(selected, i, { useGator: can.useGator });
 
+  // clear only those one-time flags that applied BEFORE this eat (consume them)
+  if (prePendingNext) pendingNext = null;
+  if (prePendingRaccoon) pendingRaccoonTurns = 0;
+  if (prePolarBearSkip) polarBearSkip = false;
+
   // Resolve predator ability first (this may set actionMode for after-eat interactions)
   runAbilityAt(newIdx);
 
@@ -981,11 +1001,6 @@ function handleGridClick(i) {
       message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
     }
   }
-
-  // clear only those one-time flags that applied BEFORE this eat (they are now consumed)
-  if (prePendingNext) pendingNext = null;
-  if (prePendingRaccoon) pendingRaccoonTurns = 0;
-  if (prePolarBearSkip) polarBearSkip = false;
 
   selected = -1;
   checkEnd();
@@ -1013,24 +1028,8 @@ function checkEnd() {
     message = 'No normal moves available. You can still use a sea animal or Restart.';
     return;
   }
-
-  // game over: count remaining land animals (non-empty grid cells)
-  // Count only animals on landable tiles (layoutPattern true)
-  let remaining = 0;
-  for (let i = 0; i < grid.length; i++) {
-    if (layoutPattern && layoutPattern[i]) {
-      if (grid[i].length > 0) remaining++;
-    } else {
-      // fallback: if layoutPattern missing, count any non-empty cell
-      if (grid[i].length > 0) remaining++;
-    }
-  }
-  if (remaining <= 3) {
-    message = 'You win! Remaining animals: ' + remaining;
-  } else {
-    message = 'You lose. Remaining animals: ' + remaining;
-  }
-  gameOver = true;
+  // finalize the game using the same logic as the Finish button
+  finishGame();
 }
 
 function hasNormalMove() {
@@ -1060,11 +1059,15 @@ function finishGame() {
   }
 
   if (remaining <= 3) {
-    let title = '';
-    if (remaining === 1) title = ' — Ecosystem Expert';
-    else if (remaining === 2) title = ' — Accidental Matchmaker';
-    else if (remaining === 3) title = ' — Island Intern';
-    message = 'You win! Remaining animals: ' + remaining + title;
+    if (remaining === 1) {
+      message = 'One Animal Left: Ecosystem Expert';
+    } else if (remaining === 2) {
+      message = 'Two Animals Left: Accidental Matchmaker';
+    } else if (remaining === 3) {
+      message = 'Three Animals Left: Island Intern';
+    } else {
+      message = 'You win! Remaining animals: ' + remaining;
+    }
   } else {
     message = 'You lose. Remaining animals: ' + remaining;
   }
