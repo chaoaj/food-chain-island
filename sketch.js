@@ -14,7 +14,7 @@ let restartButton;
 let canvasW, canvasH;
 let dispTileW, dispTileH;
 let pagePadding = 25;
-let gridX = pagePadding, gridY = 80, spacing = 10;
+let gridX = pagePadding, gridY = 100, spacing = 10;
 let seaX, seaY;
 let seaOrientation = 'right';
 let seaUsed = { whale: false, shark: false };
@@ -22,6 +22,8 @@ let gameOver = false;
 
 let layoutSelect;
 let selectedLayout = '1';
+let finishButton;
+let layoutPattern = [];
 
 // game state flags for card-specific abilities
 let pendingNext = null; // 'fox','lynx','tiger','lion','gator' - applies to the next predator only
@@ -92,7 +94,12 @@ function setup() {
   layoutSelect.option('6 - Tower', '6');
   layoutSelect.option('7 - Right Space', '7');
   layoutSelect.selected(selectedLayout);
-  layoutSelect.changed(() => { selectedLayout = layoutSelect.value(); });
+  layoutSelect.changed(() => { selectedLayout = layoutSelect.value(); initGame(); });
+
+  // Finish button (evaluates final score / forces game end)
+  finishButton = createButton('Finish');
+  finishButton.position(pagePadding + 220, pagePadding);
+  finishButton.mousePressed(finishGame);
 
   initGame();
 }
@@ -104,6 +111,8 @@ function initGame() {
   shuffle(deck, true);
 
   const pattern = getLayoutPattern(selectedLayout || '1');
+  // remember layout pattern for move validation
+  layoutPattern = pattern.slice();
   grid = [];
   let di = 0;
   for (let i = 0; i < ROWS * COLS; i++) {
@@ -116,7 +125,7 @@ function initGame() {
 
   // layout variables (respect page padding)
   gridX = pagePadding;
-  gridY = 80;
+  gridY = 100; // increased top offset
   spacing = 10;
 
   // Desired tile size: choose a sensible base per-row height (capped)
@@ -175,9 +184,22 @@ function initGame() {
   selected = -1;
   seaMode = null;
   seaSource = -1;
+  // clear ability and temporary state on restart
+  pendingNext = null;
+  pendingRaccoonTurns = 0;
+  polarBearSkip = false;
+  actionMode = null;
+  queuedRaccoonDiscard = false;
+  lastEaterIndex = -1;
   message = 'Click a card to select a predator. Use sea animals on the right.';
   seaUsed = { whale: false, shark: false };
   gameOver = false;
+
+  // position finish button under the grid
+  if (finishButton) {
+    const finishY = gridY + ROWS * (dispTileH + spacing) + 40;
+    finishButton.position(gridX, finishY);
+  }
 }
 
 function windowResized() {
@@ -195,6 +217,11 @@ function draw() {
   textSize(20);
   text('Food Chain Island — Solo (playable demo)', gridX, 40);
 
+  // legend for layout tiles (moved down 10px)
+  textSize(12);
+  fill(60);
+  text('Yellow = pass-through (cannot land). Use the layout selector to preview.', gridX, 74);
+
   // draw grid
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -203,7 +230,12 @@ function draw() {
       let y = gridY + r * (dispTileH + spacing);
 
       // tile background
-      fill(245);
+      if (layoutPattern && !layoutPattern[i]) {
+        // Y spots: passable but not landable — color them yellow
+        fill(255, 230, 120);
+      } else {
+        fill(245);
+      }
       stroke(180);
       strokeWeight(1);
       rect(x - 6, y - 6, dispTileW + 12, dispTileH + 12, 8);
@@ -386,7 +418,8 @@ function canEat(fromIdx, toIdx, ignoreNextRules = false) {
       if (!grid[midIdx] || grid[midIdx].length === 0) return { ok: false, msg: 'Lynx jump requires an animal to jump over.' };
     }
     if (pendingNext === 'tiger') {
-      if (dx + dy !== 2) return { ok: false, msg: 'Tiger requires moving two spaces to eat.' };
+      // Tiger must move exactly two spaces orthogonally (no diagonal)
+      if (!((dx === 2 && dy === 0) || (dx === 0 && dy === 2))) return { ok: false, msg: 'Tiger requires moving two spaces orthogonally to eat.' };
     }
     // gator does not restrict movement but does change stacking
   } else {
@@ -476,6 +509,10 @@ function getLayoutPattern(layoutId) {
   return patterns[layoutId] || patterns['1'];
 }
 
+function isLandable(i) {
+  return !!layoutPattern[i];
+}
+
 function runAbilityAt(predIdx) {
   if (predIdx < 0) return;
   if (!grid[predIdx] || grid[predIdx].length === 0) return;
@@ -544,8 +581,31 @@ function runAbilityFor(cardId, cardIndex) {
       message = 'Lynx: next predator must jump one card to eat (2 spaces orthogonal).';
       break;
     case 11: // Wolf
-      actionMode = { type: 'wolfMove', state: 'chooseDest', src: cardIndex };
-      message = 'Wolf: choose an adjacent space to move its entire stack.';
+      // After the Wolf eats, it may move its entire stack 1 space. If no valid spaces, do nothing.
+      const wolfSrc = cardIndex;
+      const wr = Math.floor(wolfSrc / COLS), wc = wolfSrc % COLS;
+      const wolfNeighbors = [];
+      const deltas = [ [-1,0], [1,0], [0,-1], [0,1] ];
+      for (const [dr,dc] of deltas) {
+        const nr = wr + dr, nc = wc + dc;
+        if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+        const nidx = nr * COLS + nc;
+        if (!isLandable(nidx)) continue;
+        wolfNeighbors.push(nidx);
+      }
+      if (wolfNeighbors.length === 0) {
+        message = 'Wolf has no adjacent space to move.';
+      } else if (wolfNeighbors.length === 1) {
+        // auto-move to the only available neighbor
+        const dest = wolfNeighbors[0];
+        grid[dest] = grid[dest].concat(grid[wolfSrc]);
+        grid[wolfSrc] = [];
+        message = 'Wolf moved its stack.';
+      } else {
+        // multiple choices — allow the player to choose
+        actionMode = { type: 'wolfMove', state: 'chooseDest', src: cardIndex };
+        message = 'Wolf: choose an adjacent space to move its entire stack.';
+      }
       break;
     case 12: // Tiger
       pendingNext = 'tiger';
@@ -580,6 +640,9 @@ function handleActionClick(i) {
       if (dist < 1 || dist > actionMode.maxDist) { message = 'Destination out of range.'; return; }
       // If moving multiple spaces, rules require landing on an open space
       if (dist > 1 && grid[i].length > 0) { message = 'Destination must be empty for multi-space moves.'; return; }
+
+      // Destination must be landable
+      if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
 
       // If this is a single-space move onto an occupied tile, treat it as an EAT
       if (dist === 1 && grid[i].length > 0) {
@@ -642,7 +705,8 @@ function handleActionClick(i) {
       const dx = Math.abs((src % COLS) - (i % COLS));
       const dy = Math.abs(Math.floor(src / COLS) - Math.floor(i / COLS));
       if (dx + dy !== 1) { message = 'Destination must be adjacent.'; return; }
-      // Spider moves animals; destination must be empty (no stacking)
+      // Spider moves animals; destination must be empty (no stacking) and be landable
+      if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
       if (grid[i].length > 0) { message = 'Destination must be empty for Spider.'; return; }
       grid[i] = grid[i].concat(grid[src]);
       grid[src] = [];
@@ -682,6 +746,7 @@ function handleActionClick(i) {
     const src = actionMode.src;
     if (i === src) { message = 'Destination must be different.'; return; }
     if (grid[i].length > 0) { message = 'Bat must move to an empty space.'; return; }
+    if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
     grid[i] = grid[src]; grid[src] = [];
     actionMode = null; message = 'Bat moved.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return;
   }
@@ -689,6 +754,7 @@ function handleActionClick(i) {
     const src = actionMode.src;
     const dx = Math.abs((src % COLS) - (i % COLS)); const dy = Math.abs(Math.floor(src / COLS) - Math.floor(i / COLS));
     if (dx + dy !== 1) { message = 'Wolf must move 1 space.'; return; }
+    if (!isLandable(i)) { message = 'Destination is outside the playable area.'; return; }
     grid[i] = grid[i].concat(grid[src]); grid[src] = [];
     actionMode = null; message = 'Wolf moved its stack.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return;
   }
@@ -770,13 +836,15 @@ function handleGridClick(i) {
     } else {
       if (i === seaSource) { message = 'Destination must be different.'; return; }
       if (grid[i].length > 0) { message = 'Destination must be empty for Whale.'; return; }
+      if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
       // Move the entire stack from the source to the empty destination (stacks move together)
-      grid[i] = grid[seaSource];
+      grid[i] = grid[seaSource].slice();
       grid[seaSource] = [];
       seaUsed.whale = true;
       seaMode = null; seaSource = -1;
       message = 'Whale moved an animal.';
-      // Whale is usable at any time during a turn; do not clear next-turn flags or run end-of-turn cleanup here.
+      // Whale is usable at any time during a turn; update end-of-turn checks.
+      checkEnd();
       return;
     }
   }
@@ -802,7 +870,8 @@ function handleGridClick(i) {
       // if destination is empty and adjacent, move predator there first
       if (grid[i].length === 0) {
         if (dx + dy !== 1) { message = 'Destination must be adjacent and empty.'; return; }
-        grid[i] = grid[seaSource];
+        if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
+        grid[i] = grid[seaSource].slice();
         grid[seaSource] = [];
         seaSource = i;
         seaMode = 'shark_eat';
@@ -946,8 +1015,16 @@ function checkEnd() {
   }
 
   // game over: count remaining land animals (non-empty grid cells)
+  // Count only animals on landable tiles (layoutPattern true)
   let remaining = 0;
-  for (let i = 0; i < grid.length; i++) if (grid[i].length > 0) remaining++;
+  for (let i = 0; i < grid.length; i++) {
+    if (layoutPattern && layoutPattern[i]) {
+      if (grid[i].length > 0) remaining++;
+    } else {
+      // fallback: if layoutPattern missing, count any non-empty cell
+      if (grid[i].length > 0) remaining++;
+    }
+  }
   if (remaining <= 3) {
     message = 'You win! Remaining animals: ' + remaining;
   } else {
@@ -968,4 +1045,28 @@ function hasNormalMove() {
     }
   }
   return false;
+}
+
+function finishGame() {
+  if (gameOver) return;
+  // Count only animals on landable tiles
+  let remaining = 0;
+  for (let i = 0; i < grid.length; i++) {
+    if (layoutPattern && layoutPattern[i]) {
+      if (grid[i].length > 0) remaining++;
+    } else {
+      if (grid[i].length > 0) remaining++;
+    }
+  }
+
+  if (remaining <= 3) {
+    let title = '';
+    if (remaining === 1) title = ' — Ecosystem Expert';
+    else if (remaining === 2) title = ' — Accidental Matchmaker';
+    else if (remaining === 3) title = ' — Island Intern';
+    message = 'You win! Remaining animals: ' + remaining + title;
+  } else {
+    message = 'You lose. Remaining animals: ' + remaining;
+  }
+  gameOver = true;
 }

@@ -64,34 +64,43 @@ Two Animals Left: Accidental Matchmaker
 Three Animals Left: Island Intern
 
 Alternate layouts:
+1.
+XXXXY
+XXXXY
+XXXXY
+XXXXY
+
 2. zig
-XX
-XXXX
-XXXX
-XXXX
-  XX
+XXYYY
+XXXXY
+XXXXY
+XXXXY
+YYXXY
+
 3. circle
- XXX
+YXXXY
 XXXXX
 XXXXX
- XXX
+YXXXY
+
 4. castle
-X X X
+XYXYX
 XXXXX
 XXXXX
-X X X
+XYXYX
+
 5. columns
 XXXXX
-X X X
-X X X
+XYXYX
+XYXYX
 XXXXX
 6. tower
- XXX
- XXX
+YXXXY
+YXXXY
 XXXXX
 XXXXX
 7. right space
- XXXX
-XXX X
-XXX X
- XXXX
+YXXXX
+XXXYX
+XXXYX
+YXXXX
