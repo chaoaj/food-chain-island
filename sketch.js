@@ -870,7 +870,8 @@ function handleGridClick(i) {
         message = 'Select a non-empty animal to move with the Whale.';
       } else {
         seaSource = i;
-        message = 'Whale: now click an EMPTY destination tile.';
+        const stackSize = grid[i].length;
+        message = 'Whale: selected a ' + stackSize + '-card stack. Now click an EMPTY destination tile.';
       }
       return;
     } else {
@@ -894,7 +895,9 @@ function handleGridClick(i) {
     // Steps: select predator, then select an adjacent EMPTY tile to move it, then select adjacent prey to eat (any smaller prey).
     if (seaSource === -1) {
       if (grid[i].length === 0) { message = 'Select a non-empty predator for Shark.'; return; }
-      seaSource = i; message = 'Shark: click an ADJACENT EMPTY tile to move this animal, or click an adjacent prey to eat directly.'; return;
+      seaSource = i; const stackSize = grid[i].length;
+      message = 'Shark: selected predator (stack of ' + stackSize + '). Click an ADJACENT EMPTY tile to move this animal, or click an adjacent prey to eat directly.';
+      return;
     } else if (seaMode === 'shark') {
       // pre-eat flags
       const prePendingNext = pendingNext;
