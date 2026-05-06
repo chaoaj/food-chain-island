@@ -266,14 +266,19 @@ function draw() {
           text(grid[i].length, x + dispTileW - 21, y + dispTileH - 17);
         }
 
-        // value label
+        // value label (bold when stacked)
+        push();
         fill(255);
         stroke(0, 120);
         strokeWeight(2);
         textSize(14);
+        if (grid[i].length > 1) textStyle(BOLD);
+        else textStyle(NORMAL);
         textAlign(RIGHT, TOP);
         let value = cardDefs[topId].value;
         text(value, x + dispTileW - 8, y + 8);
+        textStyle(NORMAL);
+        pop();
       } else {
         // empty slot
         noFill();
@@ -682,7 +687,10 @@ function handleActionClick(i) {
         if (prePendingRaccoon) pendingRaccoonTurns = 0;
         if (prePolarBearSkip) polarBearSkip = false;
 
-        // resolve predator ability for the eater
+        // clear the current ability mode (we're replacing the moveOne flow)
+        actionMode = null;
+
+        // resolve predator ability for the eater (may set a new actionMode)
         runAbilityAt(newIdx);
 
         // raccoon: if active before this eat and this eat was exactly -1, queue or prompt discard
@@ -691,9 +699,11 @@ function handleActionClick(i) {
           else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
         }
 
-        actionMode = null;
-        message = 'Ability used.';
-        checkEnd();
+        // If no ability was set by the predator (or raccoon), finish the ability now.
+        if (!actionMode) {
+          message = 'Ability used.';
+          checkEnd();
+        }
         return;
       }
 
@@ -760,7 +770,7 @@ function handleActionClick(i) {
     if (i === src) { message = 'Destination must be different.'; return; }
     if (grid[i].length > 0) { message = 'Bat must move to an empty space.'; return; }
     if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
-    grid[i] = grid[src]; grid[src] = [];
+    grid[i] = grid[src].slice(); grid[src] = [];
     actionMode = null; message = 'Bat moved.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return;
   }
   if (t === 'wolfMove') {
@@ -834,6 +844,14 @@ function handleGridClick(i) {
   if (actionMode) {
     handleActionClick(i);
     return;
+  }
+
+  // Defensive: cancel sea actions if that sea animal has already been used
+  if (seaMode === 'whale' && seaUsed.whale) {
+    seaMode = null; seaSource = -1; message = 'Whale has already been used.'; return;
+  }
+  if ((seaMode === 'shark' || seaMode === 'shark_eat') && seaUsed.shark) {
+    seaMode = null; seaSource = -1; message = 'Shark has already been used.'; return;
   }
 
   // Whale: pick source then any empty destination
