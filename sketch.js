@@ -1,5 +1,5 @@
 // sheet image is no longer used; individual card images are in /images/
-const COLS = 4;
+const COLS = 5;
 const ROWS = 4;
 let sheetTileW, sheetTileH;
 let cardSprites = [];
@@ -13,11 +13,15 @@ let message = 'Click a card to select a predator.';
 let restartButton;
 let canvasW, canvasH;
 let dispTileW, dispTileH;
-let gridX = 20, gridY = 80, spacing = 10;
+let pagePadding = 25;
+let gridX = pagePadding, gridY = 80, spacing = 10;
 let seaX, seaY;
 let seaOrientation = 'right';
 let seaUsed = { whale: false, shark: false };
 let gameOver = false;
+
+let layoutSelect;
+let selectedLayout = '1';
 
 // game state flags for card-specific abilities
 let pendingNext = null; // 'fox','lynx','tiger','lion','gator' - applies to the next predator only
@@ -74,30 +78,44 @@ function setup() {
 
   // create UI button
   restartButton = createButton('Restart');
-  restartButton.position(10, 10);
+  restartButton.position(pagePadding, pagePadding);
   restartButton.mousePressed(initGame);
+
+  // layout selector for alternative starting boards
+  layoutSelect = createSelect();
+  layoutSelect.position(pagePadding + 100, pagePadding);
+  layoutSelect.option('1 - Default', '1');
+  layoutSelect.option('2 - Zig', '2');
+  layoutSelect.option('3 - Circle', '3');
+  layoutSelect.option('4 - Castle', '4');
+  layoutSelect.option('5 - Columns', '5');
+  layoutSelect.option('6 - Tower', '6');
+  layoutSelect.option('7 - Right Space', '7');
+  layoutSelect.selected(selectedLayout);
+  layoutSelect.changed(() => { selectedLayout = layoutSelect.value(); });
 
   initGame();
 }
 
 function initGame() {
-  // shuffle and deal the 16 land cards into the 4x4 map
+  // shuffle and deal the land cards into the map according to the selected layout
   let deck = [];
   for (let i = 0; i < cardDefs.length; i++) deck.push(i);
   shuffle(deck, true);
 
+  const pattern = getLayoutPattern(selectedLayout || '1');
   grid = [];
+  let di = 0;
   for (let i = 0; i < ROWS * COLS; i++) {
-    grid.push([deck[i]]); // each cell has a stack of card ids (bottom -> top)
+    if (pattern[i] && di < deck.length) {
+      grid.push([deck[di++]]);
+    } else {
+      grid.push([]);
+    }
   }
 
-  // layout variables
-  gridX = 20;
-  // Shift playing field down 25px (reset button remains at top)
-  gridY = 80 + 25;
-  spacing = 10;
-  // layout variables
-  gridX = 20;
+  // layout variables (respect page padding)
+  gridX = pagePadding;
   gridY = 80;
   spacing = 10;
 
@@ -119,8 +137,8 @@ function initGame() {
   // If the required canvas doesn't fit the viewport, compute a uniform scale factor and shrink tile sizes
   const marginW = 32;
   const marginH = 48;
-  const maxAvailableW = Math.max(320, windowWidth - marginW);
-  const maxAvailableH = Math.max(240, windowHeight - marginH);
+  const maxAvailableW = Math.max(320, windowWidth - marginW - pagePadding * 2);
+  const maxAvailableH = Math.max(240, windowHeight - marginH - pagePadding * 2);
   const scaleFactor = Math.min(1, maxAvailableW / requiredCanvasW, maxAvailableH / requiredCanvasH);
   if (scaleFactor < 1) {
     dispTileH = Math.max(20, Math.floor(dispTileH * scaleFactor));
@@ -150,8 +168,8 @@ function initGame() {
   }
 
   // Final canvas fits the content (and should now be <= viewport in most cases)
-  canvasW = Math.max(320, Math.min(requiredCanvasW, windowWidth));
-  canvasH = Math.max(240, Math.min(requiredCanvasH, windowHeight));
+  canvasW = Math.max(320, Math.min(requiredCanvasW, windowWidth - pagePadding * 2));
+  canvasH = Math.max(240, Math.min(requiredCanvasH, windowHeight - pagePadding * 2));
   resizeCanvas(canvasW, canvasH);
 
   selected = -1;
@@ -402,6 +420,62 @@ function performEat(fromIdx, toIdx, options = { useGator: false }) {
   return resultIdx;
 }
 
+function getLayoutPattern(layoutId) {
+  // returns a row-major boolean array of length ROWS*COLS marking which cells should be filled
+  const patterns = {
+    '1': [
+      // default: preserve original 4x4 layout on the left side of a 5x4 grid
+      true, true, true, true, false,
+      true, true, true, true, false,
+      true, true, true, true, false,
+      true, true, true, true, false
+    ],
+    '2': [
+      // zig
+      true, true, false, false, false,
+      true, true, true, true, false,
+      true, true, true, true, false,
+      false, false, true, true, false
+    ],
+    '3': [
+      // circle
+      false, true, true, true, false,
+      true, true, true, true, true,
+      true, true, true, true, true,
+      false, true, true, true, false
+    ],
+    '4': [
+      // castle
+      true, false, true, false, true,
+      true, true, true, true, true,
+      true, true, true, true, true,
+      true, false, true, false, true
+    ],
+    '5': [
+      // columns
+      true, true, true, true, true,
+      true, false, true, false, true,
+      true, false, true, false, true,
+      true, true, true, true, true
+    ],
+    '6': [
+      // tower
+      false, true, true, true, false,
+      false, true, true, true, false,
+      true, true, true, true, true,
+      true, true, true, true, true
+    ],
+    '7': [
+      // right space
+      false, true, true, true, true,
+      true, true, true, false, true,
+      true, true, true, false, true,
+      false, true, true, true, true
+    ]
+  };
+  return patterns[layoutId] || patterns['1'];
+}
+
 function runAbilityAt(predIdx) {
   if (predIdx < 0) return;
   if (!grid[predIdx] || grid[predIdx].length === 0) return;
@@ -506,7 +580,48 @@ function handleActionClick(i) {
       if (dist < 1 || dist > actionMode.maxDist) { message = 'Destination out of range.'; return; }
       // If moving multiple spaces, rules require landing on an open space
       if (dist > 1 && grid[i].length > 0) { message = 'Destination must be empty for multi-space moves.'; return; }
-      // move stack (allow stacking for single-space moves)
+
+      // If this is a single-space move onto an occupied tile, treat it as an EAT
+      if (dist === 1 && grid[i].length > 0) {
+        // capture pre-eat flags
+        const prePendingNext = pendingNext;
+        const prePendingRaccoon = (pendingRaccoonTurns === 1);
+        const prePolarBearSkip = polarBearSkip;
+
+        // validate eat according to rules
+        const can = canEat(src, i, false);
+        if (!can.ok) { message = can.msg; return; }
+
+        // compute pred/prey values for raccoon logic
+        const predId = grid[src][grid[src].length - 1];
+        const preyId = grid[i][grid[i].length - 1];
+        const predVal = cardDefs[predId].value;
+        const preyVal = cardDefs[preyId].value;
+
+        // perform eat (respect gator stacking)
+        const newIdx = performEat(src, i, { useGator: can.useGator });
+
+        // resolve predator ability for the eater
+        runAbilityAt(newIdx);
+
+        // raccoon: if active before this eat and this eat was exactly -1, queue or prompt discard
+        if (prePendingRaccoon && (predVal - preyVal === 1)) {
+          if (actionMode) queuedRaccoonDiscard = true;
+          else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
+        }
+
+        // clear the one-time flags that applied BEFORE this eat
+        if (prePendingNext) pendingNext = null;
+        if (prePendingRaccoon) pendingRaccoonTurns = 0;
+        if (prePolarBearSkip) polarBearSkip = false;
+
+        actionMode = null;
+        message = 'Ability used.';
+        checkEnd();
+        return;
+      }
+
+      // Otherwise this is a non-eating move (empty destination) — move stack (allow stacking only when dest empty)
       grid[i] = grid[i].concat(grid[src]); grid[src] = [];
       message = 'Ability used.';
       actionMode = null;

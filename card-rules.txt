@@ -62,3 +62,36 @@ When you're unable to take additional turns, count the number of remaining Land 
 One Animal Left: Ecosystem Expert
 Two Animals Left: Accidental Matchmaker
 Three Animals Left: Island Intern
+
+Alternate layouts:
+2. zig
+XX
+XXXX
+XXXX
+XXXX
+  XX
+3. circle
+ XXX
+XXXXX
+XXXXX
+ XXX
+4. castle
+X X X
+XXXXX
+XXXXX
+X X X
+5. columns
+XXXXX
+X X X
+X X X
+XXXXX
+6. tower
+ XXX
+ XXX
+XXXXX
+XXXXX
+7. right space
+ XXXX
+XXX X
+XXX X
+ XXXX
