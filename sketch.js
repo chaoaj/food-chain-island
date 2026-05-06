@@ -570,8 +570,17 @@ function runAbilityFor(cardId, cardIndex) {
       message = 'Mouse ability: choose an animal to move 1–2 spaces.';
       break;
     case 4: // Lizard
-      actionMode = { type: 'lizardDiscard' };
-      message = 'Lizard: choose an UNSTACKED animal to remove.';
+      // If there are no UNSTACKED animals on the board, ignore the ability.
+      let hasUnstacked = false;
+      for (let gi = 0; gi < grid.length; gi++) {
+        if (grid[gi].length === 1) { hasUnstacked = true; break; }
+      }
+      if (hasUnstacked) {
+        actionMode = { type: 'lizardDiscard' };
+        message = 'Lizard: choose an UNSTACKED animal to remove.';
+      } else {
+        message = 'Lizard had no unstacked animals; ability ignored.';
+      }
       break;
     case 5: // Rat
       actionMode = { type: 'moveOne', state: 'chooseSrc', maxDist: 2 };
