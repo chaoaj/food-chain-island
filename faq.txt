@@ -1,0 +1,42 @@
+CARD-SPECIFIC NOTES
+If you have any questions on card abilities, see the FAQ below. If your question has not been answered as of yet, ask at discord. LINK: Button Shy Discord
+LAND ANIMALS
+The Land Animals are green backed cards.
+
+PLANT (0)
+The plant is considered an animal card.
+LIZARD (4)
+Only animals that are on the map may be discarded.
+BAT (6)
+When an animal moves to “any other space,” it can move any distance to any open space, ignoring the orthogonal movement restriction. It cannot stay in the same space and cannot stack on top of or underneath another animal.
+RACCOON (8)
+Only animals that are on the map may be discarded.
+FOX (9)
+When this ability is active, predators may still only eat prey valued 1, 2, or 3 less than themselves.
+LYNX (10)
+When this ability is active, predators may still only eat prey valued 1, 2, or 3 less than themselves.
+
+The next predator must jump over another animal to eat prey two spaces away
+WOLF (11)
+Move the Wolf’s entire stack when resolving its ability.
+TIGER (12)
+When this ability is active, predators may still only eat prey valued 1, 2, or 3 less than themselves.
+
+The next predator may move in multiple directions, for example up and to the right, to reach its prey.
+GATOR (13)
+Usually, when an animal eats it is moved onto the animal being eaten - so if the Gator eats the Tiger, the Gator moves to the adjacent space with the Tiger in it and is put on top of the Tiger. After the Gator eats, the next move does the opposite so the animal being eaten moves and is put underneath the animal that eats it - so if the Lynx eats the Fox, the Fox moves and is put under the Lynx.
+
+When this ability is active, predators may still only eat prey valued 1, 2, or 3 less than themselves.
+LION (14)
+The prey's number must be one less than that of the predator that is eating it.
+SEA ANIMALS
+Text
+
+SHARK
+The Shark’s ability ignores all “next turn” abilities that activated the previous turn. These abilities still apply when the Shark’s ability is not resolving. For example, if the Polar Bear ate last turn, it would not normally be able to eat again this turn, but it can do so while resolving the Shark’s ability. The predator's ability is still triggered as the ability causes an animal to eat. Whenever an animal eats, their ability is triggered unless stated otherwise.
+WHALE
+When an animal moves to “any other space,” it can move any distance to any open space, ignoring the orthogonal movement restriction. It cannot stay in the same space and cannot stack on top of or underneath another animal.
+OCTOPUS
+No effect on Plant (0), Bat (6), Wolf (11), or Polar Bear (15).
+DOLPHIN
+The predator's ability is still triggered as the ability causes an animal to eat. Whenever an animal eats, their ability is triggered unless stated otherwise.
