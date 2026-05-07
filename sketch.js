@@ -877,7 +877,6 @@ function handleGridClick(i) {
     } else {
       if (i === seaSource) { message = 'Destination must be different.'; return; }
       if (grid[i].length > 0) { message = 'Destination must be empty for Whale.'; return; }
-      if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
       // Move the entire stack from the source to the empty destination (stacks move together)
       grid[i] = grid[seaSource].slice();
       grid[seaSource] = [];
