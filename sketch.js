@@ -566,8 +566,36 @@ function runAbilityFor(cardId, cardIndex) {
       message = 'Spider: choose 2 animals to move 1 space each.';
       break;
     case 3: // Mouse
-      actionMode = { type: 'moveOne', state: 'chooseSrc', maxDist: 2 };
-      message = 'Mouse ability: choose an animal to move 1–2 spaces.';
+      // If there are no possible move candidates, ignore the ability.
+      {
+        let hasMove = false;
+        for (let src = 0; src < grid.length && !hasMove; src++) {
+          if (grid[src].length === 0) continue;
+          for (let dest = 0; dest < grid.length && !hasMove; dest++) {
+            if (dest === src) continue;
+            const dx = Math.abs((src % COLS) - (dest % COLS));
+            const dy = Math.abs(Math.floor(src / COLS) - Math.floor(dest / COLS));
+            const dist = dx + dy;
+            if (dist < 1 || dist > 2) continue;
+            if (!isLandable(dest)) continue;
+            if (dist > 1) {
+              // multi-space moves must land on an empty tile
+              if (grid[dest].length === 0) { hasMove = true; break; }
+              continue;
+            }
+            // dist === 1: either move into empty tile or perform an eat if allowed
+            if (grid[dest].length === 0) { hasMove = true; break; }
+            const can = canEat(src, dest, false);
+            if (can.ok) { hasMove = true; break; }
+          }
+        }
+        if (!hasMove) {
+          message = 'No valid moves; ability ignored.';
+        } else {
+          actionMode = { type: 'moveOne', state: 'chooseSrc', maxDist: 2 };
+          message = 'Mouse ability: choose an animal to move 1–2 spaces.';
+        }
+      }
       break;
     case 4: // Lizard
       // If there are no UNSTACKED animals on the board, ignore the ability.
@@ -591,8 +619,19 @@ function runAbilityFor(cardId, cardIndex) {
       message = 'Bat: choose an OPEN destination (cannot stack).' ;
       break;
     case 7: // Snake
-      actionMode = { type: 'snakeSwap', state: 'chooseA' };
-      message = 'Snake: choose two cards to swap.';
+      // If fewer than two cards exist on the board, ignore the ability.
+      {
+        let nonEmpty = 0;
+        for (let gi = 0; gi < grid.length && nonEmpty < 2; gi++) {
+          if (grid[gi].length > 0) nonEmpty++;
+        }
+        if (nonEmpty < 2) {
+          message = 'Snake has no two cards to swap; ability ignored.';
+        } else {
+          actionMode = { type: 'snakeSwap', state: 'chooseA' };
+          message = 'Snake: choose two cards to swap.';
+        }
+      }
       break;
     case 8: // Raccoon
       // Set to 2 so it survives through the remainder of this turn and becomes active on the next turn
@@ -618,20 +657,22 @@ function runAbilityFor(cardId, cardIndex) {
         if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
         const nidx = nr * COLS + nc;
         if (!isLandable(nidx)) continue;
+        // Wolf may only move into empty spaces (cannot move onto existing cards)
+        if (grid[nidx] && grid[nidx].length > 0) continue;
         wolfNeighbors.push(nidx);
       }
       if (wolfNeighbors.length === 0) {
-        message = 'Wolf has no adjacent space to move.';
+        message = 'Wolf has no adjacent empty space to move.';
       } else if (wolfNeighbors.length === 1) {
-        // auto-move to the only available neighbor
+        // auto-move to the only available neighbor (which is empty)
         const dest = wolfNeighbors[0];
-        grid[dest] = grid[dest].concat(grid[wolfSrc]);
+        grid[dest] = grid[wolfSrc].slice();
         grid[wolfSrc] = [];
         message = 'Wolf moved its stack.';
       } else {
         // multiple choices — allow the player to choose
         actionMode = { type: 'wolfMove', state: 'chooseDest', src: cardIndex };
-        message = 'Wolf: choose an adjacent space to move its entire stack.';
+        message = 'Wolf: choose an adjacent EMPTY space to move its entire stack.';
       }
       break;
     case 12: // Tiger
@@ -717,7 +758,7 @@ function handleActionClick(i) {
       }
 
       // Otherwise this is a non-eating move (empty destination) — move stack (allow stacking only when dest empty)
-      grid[i] = grid[i].concat(grid[src]); grid[src] = [];
+      grid[i] = grid[src].slice(); grid[src] = [];
       message = 'Ability used.';
       actionMode = null;
       if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; }
@@ -740,7 +781,7 @@ function handleActionClick(i) {
       // Spider moves animals; destination must be empty (no stacking) and be landable
       if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
       if (grid[i].length > 0) { message = 'Destination must be empty for Spider.'; return; }
-      grid[i] = grid[i].concat(grid[src]);
+      grid[i] = grid[src].slice();
       grid[src] = [];
       actionMode.movesRemaining = (actionMode.movesRemaining || 1) - 1;
       if (actionMode.movesRemaining > 0) {
@@ -787,7 +828,8 @@ function handleActionClick(i) {
     const dx = Math.abs((src % COLS) - (i % COLS)); const dy = Math.abs(Math.floor(src / COLS) - Math.floor(i / COLS));
     if (dx + dy !== 1) { message = 'Wolf must move 1 space.'; return; }
     if (!isLandable(i)) { message = 'Destination is outside the playable area.'; return; }
-    grid[i] = grid[i].concat(grid[src]); grid[src] = [];
+    if (grid[i].length > 0) { message = 'Destination must be empty for Wolf.'; return; }
+    grid[i] = grid[src].slice(); grid[src] = [];
     actionMode = null; message = 'Wolf moved its stack.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return;
   }
 }
