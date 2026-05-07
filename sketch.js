@@ -1090,10 +1090,24 @@ function isAdjacent(a, b) {
 }
 
 function checkEnd() {
-  // End-of-turn cleanup for turn-based flags
+  // If an interactive ability is currently being resolved, defer end-of-turn checks
+  if (actionMode) return;
+
+  // If a raccoon discard was queued to run after an ability, start it now instead of ending
+  if (queuedRaccoonDiscard) {
+    queuedRaccoonDiscard = false;
+    actionMode = { type: 'raccoonDiscard' };
+    message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
+    return;
+  }
+
+  // If a sea action is mid-selection, don't end the game
+  if (seaMode) return;
+
+  // End-of-turn cleanup for turn-based flags (only when no interactive modes are active)
   if (pendingRaccoonTurns > 0) pendingRaccoonTurns--;
 
-  // if any normal moves exist, game continues. If no normal moves and no sea animals left, game ends.
+  // if any normal eating moves exist, game continues. If no normal moves and no sea animals left, game ends.
   if (hasNormalMove()) return;
   if (!seaUsed.whale || !seaUsed.shark) {
     message = 'No normal moves available. You can still use a sea animal or Restart.';
