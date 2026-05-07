@@ -20,6 +20,58 @@ let seaOrientation = 'right';
 let seaUsed = { whale: false, shark: false };
 let gameOver = false;
 
+// history stack for undo support
+let history = [];
+let undoButton;
+
+function recordState(label) {
+  const snapshot = {
+    label: label || '',
+    grid: grid.map(arr => arr.slice()),
+    selected,
+    seaMode,
+    seaSource,
+    pendingNext,
+    pendingRaccoonTurns,
+    polarBearSkip,
+    actionMode: actionMode ? JSON.parse(JSON.stringify(actionMode)) : null,
+    queuedRaccoonDiscard,
+    lastEaterIndex,
+    seaUsed: { ...seaUsed },
+    gameOver,
+    message
+  };
+  history.push(snapshot);
+  updateUndoButton();
+}
+
+function updateUndoButton() {
+  if (!undoButton) return;
+  const enabled = history.length > 0;
+  // enable/disable the native control and give a visual hint
+  undoButton.elt.disabled = !enabled;
+  undoButton.style('opacity', enabled ? '1' : '0.5');
+}
+
+function undoLast() {
+  if (history.length === 0) { message = 'Nothing to undo.'; return; }
+  const s = history.pop();
+  grid = s.grid.map(arr => arr.slice());
+  selected = s.selected;
+  seaMode = s.seaMode;
+  seaSource = s.seaSource;
+  pendingNext = s.pendingNext;
+  pendingRaccoonTurns = s.pendingRaccoonTurns;
+  polarBearSkip = s.polarBearSkip;
+  actionMode = s.actionMode ? JSON.parse(JSON.stringify(s.actionMode)) : null;
+  queuedRaccoonDiscard = s.queuedRaccoonDiscard;
+  lastEaterIndex = s.lastEaterIndex;
+  seaUsed = { ...s.seaUsed };
+  gameOver = s.gameOver;
+  message = s.message || 'Undid previous action.';
+  updateUndoButton();
+}
+
 let layoutSelect;
 let selectedLayout = '1';
 let finishButton;
@@ -100,6 +152,13 @@ function setup() {
   finishButton = createButton('Finish');
   finishButton.position(pagePadding + 295, pagePadding + 25);
   finishButton.mousePressed(finishGame);
+
+  // Undo button (disabled initially)
+  undoButton = createButton('Undo');
+  undoButton.position(pagePadding + 365, pagePadding + 25);
+  undoButton.mousePressed(undoLast);
+  undoButton.elt.disabled = true;
+  undoButton.style('opacity', '0.5');
 
   initGame();
 }
@@ -195,6 +254,10 @@ function initGame() {
   seaUsed = { whale: false, shark: false };
   gameOver = false;
 
+  // reset undo history on new game
+  history = [];
+  updateUndoButton();
+
   // Reposition UI elements to account for layout/resize (keep +75px horizontal offset)
   if (restartButton) restartButton.position(pagePadding + 75, pagePadding + 25);
   if (layoutSelect) layoutSelect.position(pagePadding + 175, pagePadding + 25);
@@ -209,7 +272,13 @@ function initGame() {
       messageY = bottomSea + 20;
     }
     const finishY = messageY + 91; // move finish button further down by 25px
-    finishButton.position(gridX + 75, finishY);
+    const finishX = gridX + 75;
+    finishButton.position(finishX, finishY);
+    if (undoButton) {
+      // position undo to the right of finish (try to use actual button width)
+      const finishW = (finishButton.elt && finishButton.elt.getBoundingClientRect) ? finishButton.elt.getBoundingClientRect().width : 80;
+      undoButton.position(finishX + finishW + 8, finishY);
+    }
   }
 }
 
@@ -453,6 +522,8 @@ function canEat(fromIdx, toIdx, ignoreNextRules = false) {
 }
 
 function performEat(fromIdx, toIdx, options = { useGator: false }) {
+  // snapshot state before performing an eat so it can be undone
+  recordState('eat');
   const preyStack = grid[toIdx].slice();
   const predStack = grid[fromIdx].slice();
   let resultIdx = -1;
@@ -666,6 +737,7 @@ function runAbilityFor(cardId, cardIndex) {
       } else if (wolfNeighbors.length === 1) {
         // auto-move to the only available neighbor (which is empty)
         const dest = wolfNeighbors[0];
+        recordState('wolf-auto-move');
         grid[dest] = grid[wolfSrc].slice();
         grid[wolfSrc] = [];
         message = 'Wolf moved its stack.';
@@ -758,6 +830,7 @@ function handleActionClick(i) {
       }
 
       // Otherwise this is a non-eating move (empty destination) — move stack (allow stacking only when dest empty)
+      recordState('move');
       grid[i] = grid[src].slice(); grid[src] = [];
       message = 'Ability used.';
       actionMode = null;
@@ -781,6 +854,7 @@ function handleActionClick(i) {
       // Spider moves animals; destination must be empty (no stacking) and be landable
       if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
       if (grid[i].length > 0) { message = 'Destination must be empty for Spider.'; return; }
+      recordState('spider-move');
       grid[i] = grid[src].slice();
       grid[src] = [];
       actionMode.movesRemaining = (actionMode.movesRemaining || 1) - 1;
@@ -800,6 +874,7 @@ function handleActionClick(i) {
   }
   if (t === 'lizardDiscard') {
     if (grid[i].length !== 1) { message = 'You must choose an UNSTACKED animal (single card).'; return; }
+    recordState('lizard-discard');
     grid[i] = [];
     actionMode = null; message = 'Lizard discarded one unstacked animal.';
     if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; }
@@ -807,19 +882,21 @@ function handleActionClick(i) {
   }
   if (t === 'raccoonDiscard') {
     if (grid[i].length !== 1) { message = 'You must choose an UNSTACKED animal (single card).'; return; }
+    recordState('raccoon-discard');
     grid[i] = [];
     actionMode = null; message = 'Raccoon discarded one unstacked animal.';
     checkEnd(); return;
   }
   if (t === 'snakeSwap') {
     if (actionMode.state === 'chooseA') { actionMode.a = i; actionMode.state = 'chooseB'; message = 'Choose second card to swap.'; return; }
-    if (actionMode.state === 'chooseB') { const a = actionMode.a; const b = i; const tmp = grid[a]; grid[a] = grid[b]; grid[b] = tmp; actionMode = null; message = 'Cards swapped.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return; }
+    if (actionMode.state === 'chooseB') { const a = actionMode.a; const b = i; recordState('snake-swap'); const tmp = grid[a]; grid[a] = grid[b]; grid[b] = tmp; actionMode = null; message = 'Cards swapped.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return; }
   }
   if (t === 'batMove') {
     const src = actionMode.src;
     if (i === src) { message = 'Destination must be different.'; return; }
     if (grid[i].length > 0) { message = 'Bat must move to an empty space.'; return; }
     if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
+    recordState('bat-move');
     grid[i] = grid[src].slice(); grid[src] = [];
     actionMode = null; message = 'Bat moved.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return;
   }
@@ -829,6 +906,7 @@ function handleActionClick(i) {
     if (dx + dy !== 1) { message = 'Wolf must move 1 space.'; return; }
     if (!isLandable(i)) { message = 'Destination is outside the playable area.'; return; }
     if (grid[i].length > 0) { message = 'Destination must be empty for Wolf.'; return; }
+    recordState('wolf-move');
     grid[i] = grid[src].slice(); grid[src] = [];
     actionMode = null; message = 'Wolf moved its stack.'; if (queuedRaccoonDiscard) { queuedRaccoonDiscard = false; actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; return; } checkEnd(); return;
   }
@@ -920,6 +998,7 @@ function handleGridClick(i) {
       if (i === seaSource) { message = 'Destination must be different.'; return; }
       if (grid[i].length > 0) { message = 'Destination must be empty for Whale.'; return; }
       // Move the entire stack from the source to the empty destination (stacks move together)
+      recordState('whale-move');
       grid[i] = grid[seaSource].slice();
       grid[seaSource] = [];
       seaUsed.whale = true;
@@ -955,6 +1034,7 @@ function handleGridClick(i) {
       if (grid[i].length === 0) {
         if (dx + dy !== 1) { message = 'Destination must be adjacent and empty.'; return; }
         if (!isLandable(i)) { message = 'Destination must be a landable tile.'; return; }
+        recordState('shark-move');
         grid[i] = grid[seaSource].slice();
         grid[seaSource] = [];
         seaSource = i;
@@ -1031,11 +1111,12 @@ function handleGridClick(i) {
   // Normal play: select predator then prey
   if (selected === -1) {
     if (grid[i].length === 0) { message = 'Select a non-empty predator to begin.'; return; }
+    recordState('select');
     selected = i; message = 'Predator selected: click a prey to attempt to eat.'; return;
   }
 
   // attempt eat with the selected predator
-  if (i === selected) { selected = -1; message = 'Selection cleared.'; return; }
+  if (i === selected) { recordState('deselect'); selected = -1; message = 'Selection cleared.'; return; }
   if (grid[i].length === 0) { message = 'There is no prey here.'; return; }
 
   // capture any pending flags that apply BEFORE this eat (they should be consumed by this eat)
