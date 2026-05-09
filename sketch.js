@@ -1188,6 +1188,70 @@ function isAdjacent(a, b) {
   return (dx + dy === 1);
 }
 
+function getOrthogonalNeighbors(i) {
+  const res = [];
+  const x = i % COLS, y = Math.floor(i / COLS);
+  if (x > 0) res.push(i - 1);
+  if (x < COLS - 1) res.push(i + 1);
+  if (y > 0) res.push(i - COLS);
+  if (y < ROWS - 1) res.push(i + COLS);
+  return res;
+}
+
+// Return true if using the Whale (moving any non-empty stack to any empty landable tile)
+// could create at least one legal eat (respecting normal canEat rules).
+function canUseWhaleToCreateEat() {
+  if (seaUsed.whale) return false;
+  for (let s = 0; s < grid.length; s++) {
+    if (grid[s].length === 0) continue;
+    for (let d = 0; d < grid.length; d++) {
+      if (d === s) continue;
+      if (!isLandable(d)) continue;
+      if (grid[d].length > 0) continue;
+      // simulate the move
+      const backup = grid;
+      grid = backup.map(arr => arr.slice());
+      grid[d] = backup[s].slice();
+      grid[s] = [];
+      const possible = hasNormalMove();
+      grid = backup;
+      if (possible) return true;
+    }
+  }
+  return false;
+}
+
+// Return true if using the Shark (moving a predator 1 space or direct-eating) could create an eat.
+function canUseSharkToCreateEat() {
+  if (seaUsed.shark) return false;
+  for (let s = 0; s < grid.length; s++) {
+    if (grid[s].length === 0) continue;
+    const predId = grid[s][grid[s].length - 1];
+    const predVal = cardDefs[predId].value;
+    // direct eat from source (shark allows any smaller prey)
+    const neigh = getOrthogonalNeighbors(s);
+    for (const j of neigh) {
+      if (grid[j].length === 0) continue;
+      const preyId = grid[j][grid[j].length - 1];
+      const preyVal = cardDefs[preyId].value;
+      if (preyVal < predVal) return true;
+    }
+    // move then eat: move predator to an adjacent empty landable tile then check adjacent prey
+    for (const d of neigh) {
+      if (!isLandable(d)) continue;
+      if (grid[d].length > 0) continue;
+      const neigh2 = getOrthogonalNeighbors(d);
+      for (const k of neigh2) {
+        if (grid[k].length === 0) continue;
+        const preyId2 = grid[k][grid[k].length - 1];
+        const preyVal2 = cardDefs[preyId2].value;
+        if (preyVal2 < predVal) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function checkEnd() {
   // If an interactive ability is currently being resolved, defer end-of-turn checks
   if (actionMode) return;
