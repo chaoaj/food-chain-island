@@ -87,6 +87,7 @@ let polarBearSkip = false; // when true, Polar Bear cannot be used to eat on the
 let actionMode = null; // interactive ability resolution state
 let queuedRaccoonDiscard = false; // when true, run raccoon discard after current actionMode completes
 let lastEaterIndex = -1; // index of the last eater (set by performEat) to ensure 'next' abilities only trigger for actual eaters
+let queuedPredatorAfterRaccoon = -1; // if set, run runAbilityAt(index) after raccoon discard completes
 
 function preload() {
   // load numbered card images (0..15) from images/ and sea animals
@@ -790,11 +791,20 @@ function handleActionClick(i) {
         // clear the current ability mode (we're replacing the moveOne flow)
         actionMode = null;
 
-        // resolve predator ability for the eater (may set a new actionMode)
-        runAbilityAt(newIdx);
-
-        // raccoon trigger (centralized)
+        // raccoon trigger (centralized) — run BEFORE predator ability.
+        // If raccoon starts immediately, defer the predator ability until after the raccoon discard.
         maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
+        if (actionMode && actionMode.type === 'raccoonDiscard') {
+          queuedPredatorAfterRaccoon = newIdx;
+          return;
+        }
+        if (queuedRaccoonDiscard) {
+          queuedPredatorAfterRaccoon = newIdx;
+          return;
+        }
+
+        // otherwise run predator ability now
+        runAbilityAt(newIdx);
 
         // If no ability was set by the predator (or raccoon), finish the ability now.
         if (!actionMode) {
@@ -859,7 +869,16 @@ function handleActionClick(i) {
     if (grid[i].length !== 1) { message = 'You must choose an UNSTACKED animal (single card).'; return; }
     recordState('raccoon-discard');
     grid[i] = [];
-    actionMode = null; message = 'Raccoon discarded one unstacked animal.';
+    actionMode = null;
+    message = 'Raccoon discarded one unstacked animal.';
+    // If a predator ability was deferred until after raccoon, run it now.
+    if (queuedPredatorAfterRaccoon !== -1) {
+      const idx = queuedPredatorAfterRaccoon;
+      queuedPredatorAfterRaccoon = -1;
+      runAbilityAt(idx);
+      if (!actionMode) { message = 'Ability used.'; checkEnd(); }
+      return;
+    }
     checkEnd(); return;
   }
   if (t === 'snakeSwap') {
@@ -1053,11 +1072,21 @@ function handleGridClick(i) {
       if (prePendingRaccoon) pendingRaccoonTurns = 0;
       if (prePolarBearSkip) polarBearSkip = false;
 
-      // Resolve predator ability for the eater
-      runAbilityAt(newIdx);
-
-      // raccoon trigger (centralized)
+      // raccoon trigger (centralized) — run BEFORE predator ability.
       maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
+      if (actionMode && actionMode.type === 'raccoonDiscard') {
+        queuedPredatorAfterRaccoon = newIdx;
+        checkEnd();
+        return;
+      }
+      if (queuedRaccoonDiscard) {
+        queuedPredatorAfterRaccoon = newIdx;
+        checkEnd();
+        return;
+      }
+
+      // otherwise run predator ability now
+      runAbilityAt(newIdx);
 
       checkEnd();
       return;
@@ -1090,9 +1119,22 @@ function handleGridClick(i) {
     if (prePendingNext) pendingNext = null;
     if (prePendingRaccoon) pendingRaccoonTurns = 0;
     if (prePolarBearSkip) polarBearSkip = false;
-    runAbilityAt(newIdx);
-    // raccoon trigger (centralized)
+
+    // raccoon trigger (centralized) — run BEFORE predator ability.
     maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
+    if (actionMode && actionMode.type === 'raccoonDiscard') {
+      queuedPredatorAfterRaccoon = newIdx;
+      checkEnd();
+      return;
+    }
+    if (queuedRaccoonDiscard) {
+      queuedPredatorAfterRaccoon = newIdx;
+      checkEnd();
+      return;
+    }
+
+    // otherwise run predator ability now
+    runAbilityAt(newIdx);
     checkEnd();
     return;
   }
@@ -1137,11 +1179,23 @@ function handleGridClick(i) {
   if (prePendingRaccoon) pendingRaccoonTurns = 0;
   if (prePolarBearSkip) polarBearSkip = false;
 
-  // Resolve predator ability first (this may set actionMode for after-eat interactions)
-  runAbilityAt(newIdx);
-
-  // raccoon trigger (centralized)
+  // raccoon trigger (centralized) — run BEFORE predator ability.
   maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
+  if (actionMode && actionMode.type === 'raccoonDiscard') {
+    queuedPredatorAfterRaccoon = newIdx;
+    selected = -1;
+    checkEnd();
+    return;
+  }
+  if (queuedRaccoonDiscard) {
+    queuedPredatorAfterRaccoon = newIdx;
+    selected = -1;
+    checkEnd();
+    return;
+  }
+
+  // otherwise run predator ability now
+  runAbilityAt(newIdx);
 
   selected = -1;
   checkEnd();
