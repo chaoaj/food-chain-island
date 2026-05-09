@@ -574,6 +574,17 @@ function performEat(fromIdx, toIdx, options = { useGator: false }) {
   return resultIdx;
 }
 
+// Centralized raccoon trigger helper: if a raccoon was pending BEFORE an eat
+// and the eat was exactly 1 value lower, either queue the raccoon discard
+// to run after the current actionMode completes or start it immediately.
+function maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal) {
+  if (!prePendingRaccoon) return;
+  if (predVal - preyVal === 1) {
+    if (actionMode) queuedRaccoonDiscard = true;
+    else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
+  }
+}
+
 function getLayoutPattern(layoutId) {
   // returns a row-major boolean array of length ROWS*COLS marking which cells should be filled
   const patterns = {
@@ -782,11 +793,8 @@ function handleActionClick(i) {
         // resolve predator ability for the eater (may set a new actionMode)
         runAbilityAt(newIdx);
 
-        // raccoon: if active before this eat and this eat was exactly -1, queue or prompt discard
-        if (prePendingRaccoon && (predVal - preyVal === 1)) {
-          if (actionMode) queuedRaccoonDiscard = true;
-          else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
-        }
+        // raccoon trigger (centralized)
+        maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
 
         // If no ability was set by the predator (or raccoon), finish the ability now.
         if (!actionMode) {
@@ -1048,11 +1056,8 @@ function handleGridClick(i) {
       // Resolve predator ability for the eater
       runAbilityAt(newIdx);
 
-      // raccoon: if a raccoon was pending BEFORE this eat and this eat was exactly -1, queue or set discard
-      if (prePendingRaccoon && (predVal - preyVal === 1)) {
-        if (actionMode) queuedRaccoonDiscard = true;
-        else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
-      }
+      // raccoon trigger (centralized)
+      maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
 
       checkEnd();
       return;
@@ -1086,10 +1091,8 @@ function handleGridClick(i) {
     if (prePendingRaccoon) pendingRaccoonTurns = 0;
     if (prePolarBearSkip) polarBearSkip = false;
     runAbilityAt(newIdx);
-    if (prePendingRaccoon && (predVal - preyVal === 1)) {
-      if (actionMode) queuedRaccoonDiscard = true;
-      else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
-    }
+    // raccoon trigger (centralized)
+    maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
     checkEnd();
     return;
   }
@@ -1137,15 +1140,8 @@ function handleGridClick(i) {
   // Resolve predator ability first (this may set actionMode for after-eat interactions)
   runAbilityAt(newIdx);
 
-  // raccoon: if a raccoon was pending BEFORE this eat and this eat was exactly -1, queue or set discard
-  if (prePendingRaccoon && diff === 1) {
-    if (actionMode) {
-      queuedRaccoonDiscard = true;
-    } else {
-      actionMode = { type: 'raccoonDiscard' };
-      message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
-    }
-  }
+  // raccoon trigger (centralized)
+  maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
 
   selected = -1;
   checkEnd();
