@@ -102,6 +102,22 @@ function setup() {
   canvasW = min(windowWidth, 1100);
   canvasH = min(windowHeight, 800);
   createCanvas(canvasW, canvasH);
+  // Ensure consistent touch/mouse mapping on mobile
+  const canvasElt = document.querySelector('canvas');
+  if (canvasElt) {
+    // prevent the browser from scrolling when interacting with the canvas
+    canvasElt.style.touchAction = 'none';
+    canvasElt.addEventListener('touchstart', function (e) {
+      if (!e.touches || e.touches.length === 0) return;
+      e.preventDefault();
+      const rect = canvasElt.getBoundingClientRect();
+      const scaleX = canvasElt.width / rect.width;
+      const scaleY = canvasElt.height / rect.height;
+      const x = (e.touches[0].clientX - rect.left) * scaleX;
+      const y = (e.touches[0].clientY - rect.top) * scaleY;
+      pointerPressed(x, y);
+    }, { passive: false });
+  }
   textFont('Arial');
 
   // use loaded card images; set canonical sheet tile size from first card
@@ -263,8 +279,15 @@ function initGame() {
   updateUndoButton();
 
   // Reposition UI elements to account for layout/resize (keep +75px horizontal offset)
-  if (restartButton) restartButton.position(pagePadding + 75, pagePadding + 25);
-  if (layoutSelect) layoutSelect.position(pagePadding + 175, pagePadding + 25);
+  // On narrow viewports stack controls for easier tapping
+  const isMobileLayout = windowWidth <= 600 || canvasW <= 600;
+  if (isMobileLayout) {
+    if (restartButton) restartButton.position(pagePadding, pagePadding + 6).style('font-size', '18px');
+    if (layoutSelect) layoutSelect.position(pagePadding, pagePadding + 56).style('width', '180px');
+  } else {
+    if (restartButton) restartButton.position(pagePadding + 75, pagePadding + 25).style('font-size', '16px');
+    if (layoutSelect) layoutSelect.position(pagePadding + 175, pagePadding + 25).style('width', '120px');
+  }
   // position finish button under the grid
   if (finishButton) {
     // compute whale/shark image height to mirror draw() positioning when sea panel is below
@@ -276,12 +299,15 @@ function initGame() {
       messageY = bottomSea + 20;
     }
     const finishY = messageY + 91; // move finish button further down by 25px
-    const finishX = gridX + 75;
-    finishButton.position(finishX, finishY);
+    const finishX = isMobileLayout ? pagePadding : gridX + 75;
+    finishButton.position(finishX, finishY).style('font-size', isMobileLayout ? '18px' : '16px');
     if (undoButton) {
-      // position undo to the right of finish (try to use actual button width)
-      const finishW = (finishButton.elt && finishButton.elt.getBoundingClientRect) ? finishButton.elt.getBoundingClientRect().width : 80;
-      undoButton.position(finishX + finishW + 8, finishY);
+      if (isMobileLayout) undoButton.position(finishX + 140, finishY).style('font-size', '18px');
+      else {
+        // position undo to the right of finish (try to use actual button width)
+        const finishW = (finishButton.elt && finishButton.elt.getBoundingClientRect) ? finishButton.elt.getBoundingClientRect().width : 80;
+        undoButton.position(finishX + finishW + 8, finishY).style('font-size', '16px');
+      }
     }
   }
 }
@@ -869,6 +895,11 @@ function drawTooltip(x, y, textStr) {
 }
 
 function mousePressed() {
+  // use pointerPressed with p5 mouse coords
+  pointerPressed(mouseX, mouseY);
+}
+
+function pointerPressed(px, py) {
   if (gameOver) return;
 
   // detect clicking sea animals
@@ -877,7 +908,7 @@ function mousePressed() {
   let wy = seaY;
   let sy = wy + whaleH + 18;
 
-  if (mouseX >= seaX - 6 && mouseX <= seaX - 6 + whaleW + 12 && mouseY >= wy - 6 && mouseY <= wy - 6 + whaleH + 12) {
+  if (px >= seaX - 6 && px <= seaX - 6 + whaleW + 12 && py >= wy - 6 && py <= wy - 6 + whaleH + 12) {
     if (!seaUsed.whale) {
       // Selecting a sea animal cancels any currently active ability resolution
       if (actionMode || queuedRaccoonDiscard || selected !== -1) {
@@ -893,7 +924,7 @@ function mousePressed() {
     return;
   }
 
-  if (mouseX >= seaX - 6 && mouseX <= seaX - 6 + whaleW + 12 && mouseY >= sy - 6 && mouseY <= sy - 6 + whaleH + 12) {
+  if (px >= seaX - 6 && px <= seaX - 6 + whaleW + 12 && py >= sy - 6 && py <= sy - 6 + whaleH + 12) {
     if (!seaUsed.shark) {
       // Selecting a sea animal cancels any currently active ability resolution
       if (actionMode || queuedRaccoonDiscard || selected !== -1) {
@@ -915,7 +946,7 @@ function mousePressed() {
       let i = r * COLS + c;
       let x = gridX + c * (dispTileW + spacing);
       let y = gridY + r * (dispTileH + spacing);
-      if (mouseX >= x && mouseX <= x + dispTileW && mouseY >= y && mouseY <= y + dispTileH) {
+      if (px >= x && px <= x + dispTileW && py >= y && py <= y + dispTileH) {
         handleGridClick(i);
         return;
       }
