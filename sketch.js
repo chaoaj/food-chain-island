@@ -938,6 +938,13 @@ function mousePressed() {
 
   if (mouseX >= seaX - 6 && mouseX <= seaX - 6 + whaleW + 12 && mouseY >= wy - 6 && mouseY <= wy - 6 + whaleH + 12) {
     if (!seaUsed.whale) {
+      // Selecting a sea animal cancels any currently active ability resolution
+      if (actionMode || queuedRaccoonDiscard || selected !== -1) {
+        recordState('cancel-ability');
+        actionMode = null;
+        queuedRaccoonDiscard = false;
+        selected = -1;
+      }
       seaMode = seaMode === 'whale' ? null : 'whale';
       seaSource = -1;
       message = seaMode === 'whale' ? 'Whale selected: click an animal to move, then an empty space as destination.' : 'Cancelled sea action.';
@@ -947,6 +954,13 @@ function mousePressed() {
 
   if (mouseX >= seaX - 6 && mouseX <= seaX - 6 + whaleW + 12 && mouseY >= sy - 6 && mouseY <= sy - 6 + whaleH + 12) {
     if (!seaUsed.shark) {
+      // Selecting a sea animal cancels any currently active ability resolution
+      if (actionMode || queuedRaccoonDiscard || selected !== -1) {
+        recordState('cancel-ability');
+        actionMode = null;
+        queuedRaccoonDiscard = false;
+        selected = -1;
+      }
       seaMode = seaMode === 'shark' ? null : 'shark';
       seaSource = -1;
       message = seaMode === 'shark' ? 'Shark selected: click a predator to move 1 space and eat any smaller prey.' : 'Cancelled sea action.';
