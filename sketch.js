@@ -1,6 +1,6 @@
 // sheet image is no longer used; individual card images are in /images/
 const COLS = 5;
-const ROWS = 4;
+const ROWS = 5;
 let sheetTileW, sheetTileH;
 let cardSprites = [];
 let seaSprites = {};
@@ -722,11 +722,11 @@ function getLayoutPattern(layoutId) {
       true, true, true, true, false
     ],
     '2': [
-      // zig
+      // zig (custom): XXYYY / XXXXY / XXXXY / XXXXY
       true, true, false, false, false,
-      true, true, true, true, false,
-      true, true, true, true, false,
-      false, false, true, true, false
+      true, true, true,  true,  false,
+      true, true, true,  true,  false,
+      true, true, true,  true,  false
     ],
     '3': [
       // circle
