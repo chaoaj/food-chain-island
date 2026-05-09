@@ -502,9 +502,11 @@ function canEat(fromIdx, toIdx, ignoreNextRules = false) {
       if (!(dx === 1 && dy === 1)) return { ok: false, msg: 'Fox requires diagonal move of 1 to eat.' };
     }
     if (pendingNext === 'lynx') {
-      // must jump 2 orthogonal with a card in the middle
+      // must jump exactly two orthogonal and there must be an animal in the middle cell
       if (!((dx === 2 && dy === 0) || (dx === 0 && dy === 2))) return { ok: false, msg: 'Lynx requires a jump over one animal (2 spaces orthogonal).' };
-      const midX = (ax + bx) / 2, midY = (ay + by) / 2;
+      const midX = ax + (bx > ax ? 1 : -1);
+      const midY = ay + (by > ay ? 1 : -1);
+      if (midX < 0 || midX >= COLS || midY < 0 || midY >= ROWS) return { ok: false, msg: 'Lynx jump out of bounds.' };
       const midIdx = midY * COLS + midX;
       if (!grid[midIdx] || grid[midIdx].length === 0) return { ok: false, msg: 'Lynx jump requires an animal to jump over.' };
     }
@@ -1064,7 +1066,14 @@ function handleGridClick(i) {
   // Normal play: select predator then prey
   if (selected === -1) {
     if (grid[i].length === 0) { message = 'Select a non-empty predator to begin.'; return; }
+    // snapshot previous state so Undo can revert activation + selection
     recordState('select');
+    // If a next-turn ability was queued from the previous eat, activate it now
+    if (pendingNextQueued && !actionMode && !seaMode) {
+      pendingNext = pendingNextQueued;
+      pendingNextQueued = null;
+      message = 'Next-turn ability active: ' + pendingNext + '.';
+    }
     selected = i; message = 'Predator selected: click a prey to attempt to eat.'; return;
   }
 
