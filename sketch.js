@@ -23,6 +23,50 @@ let gameOver = false;
 // history stack for undo support
 let history = [];
 let undoButton;
+let debugDiv = null;
+let debugContentDiv = null;
+let copyLogsButton = null;
+let debugLog = [];
+const DEBUG_LOG_MAX = 60;
+
+function pushDebug(msg) {
+  const ts = (new Date()).toLocaleTimeString();
+  const line = ts + '  ' + msg;
+  debugLog.push(line);
+  if (debugLog.length > DEBUG_LOG_MAX) debugLog.shift();
+  console.log('[DEBUG]', line);
+}
+
+function fallbackCopyTextToClipboard(text) {
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    // Move off-screen
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    pushDebug('Logs copied via fallback.');
+  } catch (e) {
+    pushDebug('Fallback copy failed: ' + e);
+  }
+}
+
+function copyLogs() {
+  const text = debugLog.join('\n');
+  if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      pushDebug('Logs copied to clipboard.');
+    }).catch(err => {
+      pushDebug('navigator.clipboard failed: ' + err + ' — falling back');
+      fallbackCopyTextToClipboard(text);
+    });
+  } else {
+    fallbackCopyTextToClipboard(text);
+  }
+}
 
 function recordState(label) {
   const snapshot = {
@@ -45,6 +89,7 @@ function recordState(label) {
     message
   };
   history.push(snapshot);
+  if (label) pushDebug('recordState: ' + label);
   updateUndoButton();
 }
 
@@ -109,6 +154,20 @@ function setup() {
   canvasW = min(windowWidth, 1100);
   canvasH = min(windowHeight, 800);
   createCanvas(canvasW, canvasH);
+  // Debug panel is disabled for now to avoid UI clutter. Logs are still
+  // collected via `pushDebug()`; a top-bar Copy Logs button is provided.
+  debugDiv = null;
+  debugContentDiv = null;
+  try {
+    copyLogsButton = createButton('Copy Logs');
+    // position next to other top-bar controls (Restart/Layout/Finish/Undo)
+    copyLogsButton.position(pagePadding + 445, pagePadding + 25);
+    copyLogsButton.style('font-size', '12px');
+    copyLogsButton.mousePressed(copyLogs);
+  } catch (e) {
+    console.warn('Could not create copyLogsButton:', e);
+    copyLogsButton = null;
+  }
   // Ensure consistent touch/mouse mapping on mobile
   const canvasElt = document.querySelector('canvas');
   if (canvasElt) {
@@ -488,24 +547,10 @@ function draw() {
   }
   text(message, gridX, messageY);
 
-  // DEBUG: show internal flags to help trace raccoon behavior
-  push();
-  const dbgX = gridX + COLS * (dispTileW + spacing) + 10;
-  const dbgY = gridY + 6;
-  fill(0, 200);
-  noStroke();
-  textSize(12);
-  textAlign(LEFT, TOP);
-  text('DEBUG', dbgX, dbgY);
-  text('pendingRaccoonQueued: ' + pendingRaccoonQueued, dbgX, dbgY + 16);
-  text('pendingRaccoonTurns: ' + pendingRaccoonTurns, dbgX, dbgY + 32);
-  text('queuedRaccoonDiscard: ' + queuedRaccoonDiscard, dbgX, dbgY + 48);
-  text('queuedPredatorAfterRaccoon: ' + (queuedPredatorAfterRaccoon === -1 ? 'none' : queuedPredatorAfterRaccoon), dbgX, dbgY + 64);
-  text('lastEatDiff: ' + (lastEatDiff === null ? 'null' : lastEatDiff), dbgX, dbgY + 80);
-  text('lastEaterIndex: ' + lastEaterIndex, dbgX, dbgY + 96);
-  text('actionMode: ' + (actionMode ? actionMode.type : 'none'), dbgX, dbgY + 112);
-  text('pendingNext: ' + (pendingNext || 'none'), dbgX, dbgY + 128);
-  pop();
+  // DEBUG PANEL DISABLED
+  // The on-screen debug panel is currently hidden to avoid UI clutter.
+  // Logs continue to be collected via `pushDebug()` and can be copied
+  // using the top-bar "Copy Logs" button.
 
   // tooltip rendering for hovered card (drawn last so it appears above other elements)
   if (typeof hoveredCard !== 'undefined' && hoveredCard !== -1 && grid[hoveredCard] && grid[hoveredCard].length > 0 && !gameOver) {
@@ -598,6 +643,16 @@ function performEat(fromIdx, toIdx, options = { useGator: false }) {
   }
   // record which index just performed an eat so abilities that should only trigger for eaters can check
   lastEaterIndex = resultIdx;
+  // debug log the eat
+  try {
+    const predTopId = predStack[predStack.length - 1];
+    const preyTopId = preyStack[preyStack.length - 1];
+    const predName = cardDefs[predTopId].name;
+    const preyName = cardDefs[preyTopId].name;
+    const predVal = cardDefs[predTopId].value;
+    const preyVal = cardDefs[preyTopId].value;
+    pushDebug('EAT: ' + predName + '(' + predVal + ') from ' + fromIdx + ' ate ' + preyName + '(' + preyVal + ') at ' + toIdx + ' diff=' + (predVal - preyVal) + ' -> result=' + resultIdx);
+  } catch (e) { /* ignore logging errors */ }
   return resultIdx;
 }
 
@@ -617,18 +672,7 @@ function maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal) {
 // (because raccoon was started or predator was queued), false if predator
 // ability has been executed and caller should continue normal completion.
 function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSkip, predVal, preyVal) {
-  console.log('[handlePostEat] newIdx=', newIdx,
-    'prePendingNext=', prePendingNext,
-    'prePendingRaccoon=', prePendingRaccoon,
-    'prePolarBearSkip=', prePolarBearSkip,
-    'predVal=', predVal,
-    'preyVal=', preyVal,
-    'diff=', (predVal - preyVal),
-    'pendingRaccoonTurns=', pendingRaccoonTurns,
-    'queuedRaccoonDiscard=', queuedRaccoonDiscard,
-    'actionMode=', actionMode ? actionMode.type : null,
-    'lastEaterIndex=', lastEaterIndex,
-    'lastEatDiff=', lastEatDiff);
+  pushDebug('handlePostEat newIdx=' + newIdx + ' prePendingNext=' + prePendingNext + ' prePendingRaccoon=' + prePendingRaccoon + ' predVal=' + predVal + ' preyVal=' + preyVal + ' diff=' + (predVal - preyVal) + ' pendingRaccoonTurns=' + pendingRaccoonTurns + ' queuedRaccoonDiscard=' + queuedRaccoonDiscard + ' actionMode=' + (actionMode ? actionMode.type : 'none') + ' lastEaterIndex=' + lastEaterIndex + ' lastEatDiff=' + lastEatDiff);
   // record the last eat diff for end-of-turn checks
   lastEatDiff = (predVal - preyVal);
 
@@ -645,12 +689,12 @@ function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSk
     if (actionMode) {
       queuedRaccoonDiscard = true;
       queuedPredatorAfterRaccoon = newIdx;
-      console.log('[handlePostEat] raccoon would trigger but actionMode active; queuedRaccoonDiscard=TRUE, queuedPredatorAfterRaccoon=', queuedPredatorAfterRaccoon);
+      pushDebug('handlePostEat: raccoon queued (actionMode active), queuedPredatorAfterRaccoon=' + queuedPredatorAfterRaccoon);
     } else {
       actionMode = { type: 'raccoonDiscard' };
       message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
       queuedPredatorAfterRaccoon = newIdx;
-      console.log('[handlePostEat] raccoon started immediately; queuedPredatorAfterRaccoon=', queuedPredatorAfterRaccoon);
+      pushDebug('handlePostEat: raccoon started immediately; queuedPredatorAfterRaccoon=' + queuedPredatorAfterRaccoon);
     }
     return true;
   }
@@ -658,7 +702,7 @@ function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSk
   // If raccoon was queued earlier (queuedRaccoonDiscard true), defer predator ability
   if (queuedRaccoonDiscard) {
     queuedPredatorAfterRaccoon = newIdx;
-    console.log('[handlePostEat] queuedRaccoonDiscard already set; deferring predator ability for newIdx=', newIdx);
+    pushDebug('handlePostEat: queuedRaccoonDiscard already set; deferring predator ability for newIdx=' + newIdx);
     return true;
   }
 
@@ -731,6 +775,10 @@ function runAbilityAt(predIdx) {
   if (predIdx < 0) return;
   if (!grid[predIdx] || grid[predIdx].length === 0) return;
   const topId = grid[predIdx][grid[predIdx].length - 1];
+
+  try {
+    pushDebug('runAbilityAt: ' + cardDefs[topId].name + ' at ' + predIdx);
+  } catch (e) {}
 
   // Only activate "next-turn" abilities when the card actually performed the eat.
   // This prevents cards (like Lynx) from setting pendingNext when they were the prey.
@@ -1187,6 +1235,13 @@ function handleGridClick(i) {
       pendingNextQueued = null;
       message = 'Next-turn ability active: ' + pendingNext + '.';
     }
+    // If a Raccoon was used on the previous turn and queued, activate it for this turn now
+    if (pendingRaccoonQueued && !actionMode && !seaMode) {
+      // Activate raccoon for this turn (1 means effect applies this turn)
+      pendingRaccoonTurns = 1;
+      pendingRaccoonQueued = false;
+      pushDebug('Committed pendingRaccoonQueued at turn start: pendingRaccoonTurns=' + pendingRaccoonTurns);
+    }
     selected = i; message = 'Predator selected: click a prey to attempt to eat.'; return;
   }
 
@@ -1352,7 +1407,7 @@ function checkEnd() {
   // Raccoon: if raccoon is active this turn and the most recent eat was exactly 1 less,
   // ensure Raccoon fires first by starting the discard now (if not already queued).
   if (pendingRaccoonTurns === 1 && lastEatDiff === 1 && !queuedRaccoonDiscard) {
-    console.log('[checkEnd] starting raccoon discard from checkEnd: pendingRaccoonTurns=', pendingRaccoonTurns, 'lastEatDiff=', lastEatDiff, 'queuedRaccoonDiscard=', queuedRaccoonDiscard, 'lastEaterIndex=', lastEaterIndex);
+    pushDebug('checkEnd: starting raccoon discard; pendingRaccoonTurns=' + pendingRaccoonTurns + ' lastEatDiff=' + lastEatDiff + ' lastEaterIndex=' + lastEaterIndex);
     actionMode = { type: 'raccoonDiscard' };
     message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
     if (queuedPredatorAfterRaccoon === -1 && lastEaterIndex !== -1) queuedPredatorAfterRaccoon = lastEaterIndex;
