@@ -64,7 +64,7 @@ Two Animals Left: Accidental Matchmaker
 Three Animals Left: Island Intern
 
 Alternate layouts:
-1.
+1.Default
 XXXXY
 XXXXY
 XXXXY

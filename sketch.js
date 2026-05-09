@@ -714,54 +714,63 @@ function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSk
 function getLayoutPattern(layoutId) {
   // returns a row-major boolean array of length ROWS*COLS marking which cells should be filled
   const patterns = {
+    // All layouts are 5x5 arrays (row-major). By default the last row
+    // is non-landable (Yellow) unless explicitly specified (see '2').
     '1': [
-      // default: preserve original 4x4 layout on the left side of a 5x4 grid
+      // default: 4x4 layout on the left side of a 5x5 board
       true, true, true, true, false,
       true, true, true, true, false,
       true, true, true, true, false,
-      true, true, true, true, false
+      true, true, true, true, false,
+      false, false, false, false, false
     ],
     '2': [
-      // zig (custom): XXYYY / XXXXY / XXXXY / XXXXY
-      true, true, false, false, false,
-      true, true, true,  true,  false,
-      true, true, true,  true,  false,
-      true, true, true,  true,  false
+      // zig (custom): XXYYY / XXXXY / XXXXY / XXXXY / YYXXY
+      true,  true,  false, false, false,
+      true,  true,  true,  true,  false,
+      true,  true,  true,  true,  false,
+      true,  true,  true,  true,  false,
+      false, false, true,  true,  false
     ],
     '3': [
-      // circle
-      false, true, true, true, false,
-      true, true, true, true, true,
-      true, true, true, true, true,
-      false, true, true, true, false
+      // circle (4-row pattern, last row Yellow)
+      false, true,  true,  true,  false,
+      true,  true,  true,  true,  true,
+      true,  true,  true,  true,  true,
+      false, true,  true,  true,  false,
+      false, false, false, false, false
     ],
     '4': [
-      // castle
-      true, false, true, false, true,
-      true, true, true, true, true,
-      true, true, true, true, true,
-      true, false, true, false, true
+      // castle (4-row pattern, last row Yellow)
+      true,  false, true,  false, true,
+      true,  true,  true,  true,  true,
+      true,  true,  true,  true,  true,
+      true,  false, true,  false, true,
+      false, false, false, false, false
     ],
     '5': [
-      // columns
-      true, true, true, true, true,
-      true, false, true, false, true,
-      true, false, true, false, true,
-      true, true, true, true, true
+      // columns (4-row pattern, last row Yellow)
+      true,  true,  true,  true,  true,
+      true,  false, true,  false, true,
+      true,  false, true,  false, true,
+      true,  true,  true,  true,  true,
+      false, false, false, false, false
     ],
     '6': [
-      // tower
-      false, true, true, true, false,
-      false, true, true, true, false,
-      true, true, true, true, true,
-      true, true, true, true, true
+      // tower (4-row pattern, last row Yellow)
+      false, true,  true,  true,  false,
+      false, true,  true,  true,  false,
+      true,  true,  true,  true,  true,
+      true,  true,  true,  true,  true,
+      false, false, false, false, false
     ],
     '7': [
-      // right space
-      false, true, true, true, true,
-      true, true, true, false, true,
-      true, true, true, false, true,
-      false, true, true, true, true
+      // right space (4-row pattern, last row Yellow)
+      false, true,  true,  true,  true,
+      true,  true,  true,  false, true,
+      true,  true,  true,  false, true,
+      false, true,  true,  true,  true,
+      false, false, false, false, false
     ]
   };
   return patterns[layoutId] || patterns['1'];
