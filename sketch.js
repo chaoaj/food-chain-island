@@ -627,146 +627,81 @@ function runAbilityAt(predIdx) {
 }
 
 function runAbilityFor(cardId, cardIndex) {
-  // set messages and interactive modes based on card
+  // set messages and interactive modes based on card (refactored via helpers)
+  const setAction = (mode, msg) => { actionMode = mode; message = msg; };
   switch (cardId) {
-    case 0: // Plant
+    case 0:
       message = 'Plant has no ability.';
       break;
-    case 1: // Ant
-      actionMode = { type: 'moveOne', state: 'chooseSrc', maxDist: 3 };
-      message = 'Ant ability: choose an animal to move up to 3 spaces.';
+    case 1:
+      setAction({ type: 'moveOne', state: 'chooseSrc', maxDist: 3 }, 'Ant ability: choose an animal to move up to 3 spaces.');
       break;
-    case 2: // Spider
-      actionMode = { type: 'spider', state: 'chooseSrc', movesRemaining: 2 };
-      message = 'Spider: choose 2 animals to move 1 space each.';
+    case 2:
+      setAction({ type: 'spider', state: 'chooseSrc', movesRemaining: 2 }, 'Spider: choose 2 animals to move 1 space each.');
       break;
-    case 3: // Mouse
-      // If there are no possible move candidates, ignore the ability.
-      {
-        let hasMove = false;
-        for (let src = 0; src < grid.length && !hasMove; src++) {
-          if (grid[src].length === 0) continue;
-          for (let dest = 0; dest < grid.length && !hasMove; dest++) {
-            if (dest === src) continue;
-            const dx = Math.abs((src % COLS) - (dest % COLS));
-            const dy = Math.abs(Math.floor(src / COLS) - Math.floor(dest / COLS));
-            const dist = dx + dy;
-            if (dist < 1 || dist > 2) continue;
-            if (!isLandable(dest)) continue;
-            if (dist > 1) {
-              // multi-space moves must land on an empty tile
-              if (grid[dest].length === 0) { hasMove = true; break; }
-              continue;
-            }
-            // dist === 1: either move into empty tile or perform an eat if allowed
-            if (grid[dest].length === 0) { hasMove = true; break; }
-            const can = canEat(src, dest, false);
-            if (can.ok) { hasMove = true; break; }
-          }
-        }
-        if (!hasMove) {
-          message = 'No valid moves; ability ignored.';
-        } else {
-          actionMode = { type: 'moveOne', state: 'chooseSrc', maxDist: 2 };
-          message = 'Mouse ability: choose an animal to move 1–2 spaces.';
-        }
-      }
+    case 3:
+      if (!hasMoveForMouse(2)) message = 'No valid moves; ability ignored.';
+      else setAction({ type: 'moveOne', state: 'chooseSrc', maxDist: 2 }, 'Mouse ability: choose an animal to move 1–2 spaces.');
       break;
-    case 4: // Lizard
-      // If there are no UNSTACKED animals on the board, ignore the ability.
-      let hasUnstacked = false;
-      for (let gi = 0; gi < grid.length; gi++) {
-        if (grid[gi].length === 1) { hasUnstacked = true; break; }
-      }
-      if (hasUnstacked) {
-        actionMode = { type: 'lizardDiscard' };
-        message = 'Lizard: choose an UNSTACKED animal to remove.';
-      } else {
-        message = 'Lizard had no unstacked animals; ability ignored.';
-      }
+    case 4:
+      if (anyUnstacked()) setAction({ type: 'lizardDiscard' }, 'Lizard: choose an UNSTACKED animal to remove.');
+      else message = 'Lizard had no unstacked animals; ability ignored.';
       break;
-    case 5: // Rat
-      actionMode = { type: 'moveOne', state: 'chooseSrc', maxDist: 2 };
-      message = 'Rat: choose an animal to move 2 spaces.';
+    case 5:
+      setAction({ type: 'moveOne', state: 'chooseSrc', maxDist: 2 }, 'Rat: choose an animal to move 2 spaces.');
       break;
-    case 6: // Bat
-      actionMode = { type: 'batMove', state: 'chooseDest', src: cardIndex };
-      message = 'Bat: choose an OPEN destination (cannot stack).' ;
+    case 6:
+      setAction({ type: 'batMove', state: 'chooseDest', src: cardIndex }, 'Bat: choose an OPEN destination (cannot stack).');
       break;
-    case 7: // Snake
-      // If fewer than two cards exist on the board, ignore the ability.
-      {
-        let nonEmpty = 0;
-        for (let gi = 0; gi < grid.length && nonEmpty < 2; gi++) {
-          if (grid[gi].length > 0) nonEmpty++;
-        }
-        if (nonEmpty < 2) {
-          message = 'Snake has no two cards to swap; ability ignored.';
-        } else {
-          actionMode = { type: 'snakeSwap', state: 'chooseA' };
-          message = 'Snake: choose two cards to swap.';
-        }
-      }
+    case 7:
+      if (countNonEmpty() < 2) message = 'Snake has no two cards to swap; ability ignored.';
+      else setAction({ type: 'snakeSwap', state: 'chooseA' }, 'Snake: choose two cards to swap.');
       break;
-    case 8: // Raccoon
-      // Set to 2 so it survives through the remainder of this turn and becomes active on the next turn
+    case 8:
       pendingRaccoonTurns = 2;
       message = 'Raccoon activated: on your next turn, if you eat an animal exactly 1 lower, discard an unstacked animal.';
       break;
-    case 9: // Fox
+    case 9:
       pendingNextQueued = 'fox';
       message = 'Fox: next predator must move diagonally 1 to eat.';
       break;
-    case 10: // Lynx
+    case 10:
       pendingNextQueued = 'lynx';
       message = 'Lynx: next predator must jump one card to eat (2 spaces orthogonal).';
       break;
-    case 11: // Wolf
-      // After the Wolf eats, it may move its entire stack 1 space. If no valid spaces, do nothing.
-      const wolfSrc = cardIndex;
-      const wr = Math.floor(wolfSrc / COLS), wc = wolfSrc % COLS;
-      const wolfNeighbors = [];
-      const deltas = [ [-1,0], [1,0], [0,-1], [0,1] ];
-      for (const [dr,dc] of deltas) {
-        const nr = wr + dr, nc = wc + dc;
-        if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
-        const nidx = nr * COLS + nc;
-        if (!isLandable(nidx)) continue;
-        // Wolf may only move into empty spaces (cannot move onto existing cards)
-        if (grid[nidx] && grid[nidx].length > 0) continue;
-        wolfNeighbors.push(nidx);
-      }
-      if (wolfNeighbors.length === 0) {
+    case 11: {
+      const neighbors = getWolfNeighbors(cardIndex);
+      if (neighbors.length === 0) {
         message = 'Wolf has no adjacent empty space to move.';
-      } else if (wolfNeighbors.length === 1) {
-        // auto-move to the only available neighbor (which is empty)
-        const dest = wolfNeighbors[0];
+      } else if (neighbors.length === 1) {
         recordState('wolf-auto-move');
-        grid[dest] = grid[wolfSrc].slice();
-        grid[wolfSrc] = [];
+        const dest = neighbors[0];
+        grid[dest] = grid[cardIndex].slice();
+        grid[cardIndex] = [];
         message = 'Wolf moved its stack.';
       } else {
-        // multiple choices — allow the player to choose
-        actionMode = { type: 'wolfMove', state: 'chooseDest', src: cardIndex };
-        message = 'Wolf: choose an adjacent EMPTY space to move its entire stack.';
+        setAction({ type: 'wolfMove', state: 'chooseDest', src: cardIndex }, 'Wolf: choose an adjacent EMPTY space to move its entire stack.');
       }
       break;
-    case 12: // Tiger
+    }
+    case 12:
       pendingNextQueued = 'tiger';
       message = 'Tiger: next predator may move two spaces (path allowed) to reach prey.';
       break;
-    case 13: // Gator
+    case 13:
       pendingNextQueued = 'gator';
       message = 'Gator: next eat will reverse stacking (prey moves under eater).';
       break;
-    case 14: // Lion
+    case 14:
       pendingNextQueued = 'lion';
       message = 'Lion: next predator must eat a prey valued exactly 1 less.';
       break;
-    case 15: // Polar Bear
+    case 15:
       polarBearSkip = true;
       message = 'Polar Bear used: it cannot eat on your next turn.';
       break;
+    default:
+      message = 'Unknown ability.';
   }
 }
 
@@ -1198,6 +1133,56 @@ function getOrthogonalNeighbors(i) {
   return res;
 }
 
+function anyUnstacked() {
+  for (let gi = 0; gi < grid.length; gi++) if (grid[gi].length === 1) return true;
+  return false;
+}
+
+function countNonEmpty() {
+  let c = 0;
+  for (let gi = 0; gi < grid.length; gi++) if (grid[gi].length > 0) c++;
+  return c;
+}
+
+function hasMoveForMouse(maxDist) {
+  for (let src = 0; src < grid.length; src++) {
+    if (grid[src].length === 0) continue;
+    const sx = src % COLS, sy = Math.floor(src / COLS);
+    for (let dest = 0; dest < grid.length; dest++) {
+      if (dest === src) continue;
+      const dx = Math.abs(sx - (dest % COLS));
+      const dy = Math.abs(sy - Math.floor(dest / COLS));
+      const dist = dx + dy;
+      if (dist < 1 || dist > maxDist) continue;
+      if (!isLandable(dest)) continue;
+      if (dist > 1) {
+        if (grid[dest].length === 0) return true;
+        continue;
+      }
+      // dist === 1
+      if (grid[dest].length === 0) return true;
+      const can = canEat(src, dest, false);
+      if (can.ok) return true;
+    }
+  }
+  return false;
+}
+
+function getWolfNeighbors(idx) {
+  const x = idx % COLS, y = Math.floor(idx / COLS);
+  const deltas = [ [-1,0], [1,0], [0,-1], [0,1] ];
+  const out = [];
+  for (const [dr,dc] of deltas) {
+    const nr = y + dr, nc = x + dc;
+    if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+    const nidx = nr * COLS + nc;
+    if (!isLandable(nidx)) continue;
+    if (grid[nidx] && grid[nidx].length > 0) continue;
+    out.push(nidx);
+  }
+  return out;
+}
+
 // Return true if using the Whale (moving any non-empty stack to any empty landable tile)
 // could create at least one legal eat (respecting normal canEat rules).
 function canUseWhaleToCreateEat() {
@@ -1266,24 +1251,28 @@ function checkEnd() {
 
   // If a sea action is mid-selection, don't end the game
   if (seaMode) return;
-
-  // Activate any queued next-turn ability now that the turn is ending
-  if (pendingNextQueued) {
-    pendingNext = pendingNextQueued;
-    pendingNextQueued = null;
-    // notify player that a next-turn ability is now active
-    message = 'Next-turn ability active: ' + pendingNext + '.';
-  }
-
-  // End-of-turn cleanup for turn-based flags (only when no interactive modes are active)
-  if (pendingRaccoonTurns > 0) pendingRaccoonTurns--;
-
-  // if any normal eating moves exist, game continues. If no normal moves and no sea animals left, game ends.
+  // First: check for any actionable moves in the CURRENT turn (before committing queued next-turn effects)
   if (hasNormalMove()) return;
-  if (!seaUsed.whale || !seaUsed.shark) {
+  if ((!seaUsed.whale && canUseWhaleToCreateEat()) || (!seaUsed.shark && canUseSharkToCreateEat())) {
     message = 'No normal moves available. You can still use a sea animal or Restart.';
     return;
   }
+
+  // No actions left in the current turn — commit end-of-turn queued effects and advance to the next turn state
+  if (pendingNextQueued) {
+    pendingNext = pendingNextQueued;
+    pendingNextQueued = null;
+    message = 'Next-turn ability active: ' + pendingNext + '.';
+  }
+  if (pendingRaccoonTurns > 0) pendingRaccoonTurns--;
+
+  // After activating queued next-turn effects, check again for possible moves in the new state
+  if (hasNormalMove()) return;
+  if ((!seaUsed.whale && canUseWhaleToCreateEat()) || (!seaUsed.shark && canUseSharkToCreateEat())) {
+    message = 'No normal moves available. You can still use a sea animal or Restart.';
+    return;
+  }
+
   // finalize the game using the same logic as the Finish button
   finishGame();
 }
