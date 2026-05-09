@@ -488,6 +488,25 @@ function draw() {
   }
   text(message, gridX, messageY);
 
+  // DEBUG: show internal flags to help trace raccoon behavior
+  push();
+  const dbgX = gridX + COLS * (dispTileW + spacing) + 10;
+  const dbgY = gridY + 6;
+  fill(0, 200);
+  noStroke();
+  textSize(12);
+  textAlign(LEFT, TOP);
+  text('DEBUG', dbgX, dbgY);
+  text('pendingRaccoonQueued: ' + pendingRaccoonQueued, dbgX, dbgY + 16);
+  text('pendingRaccoonTurns: ' + pendingRaccoonTurns, dbgX, dbgY + 32);
+  text('queuedRaccoonDiscard: ' + queuedRaccoonDiscard, dbgX, dbgY + 48);
+  text('queuedPredatorAfterRaccoon: ' + (queuedPredatorAfterRaccoon === -1 ? 'none' : queuedPredatorAfterRaccoon), dbgX, dbgY + 64);
+  text('lastEatDiff: ' + (lastEatDiff === null ? 'null' : lastEatDiff), dbgX, dbgY + 80);
+  text('lastEaterIndex: ' + lastEaterIndex, dbgX, dbgY + 96);
+  text('actionMode: ' + (actionMode ? actionMode.type : 'none'), dbgX, dbgY + 112);
+  text('pendingNext: ' + (pendingNext || 'none'), dbgX, dbgY + 128);
+  pop();
+
   // tooltip rendering for hovered card (drawn last so it appears above other elements)
   if (typeof hoveredCard !== 'undefined' && hoveredCard !== -1 && grid[hoveredCard] && grid[hoveredCard].length > 0 && !gameOver) {
     const cid = grid[hoveredCard][grid[hoveredCard].length - 1];
@@ -761,6 +780,7 @@ function runAbilityFor(cardId, cardIndex) {
       break;
     case 8:
       pendingRaccoonQueued = true;
+      console.log('[runAbilityFor] Raccoon ability queued for next turn');
       message = 'Raccoon activated: on your next turn, if you eat an animal exactly 1 lower, discard an unstacked animal.';
       break;
     case 9:
