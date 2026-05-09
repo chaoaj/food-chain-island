@@ -32,6 +32,7 @@ function recordState(label) {
     seaMode,
     seaSource,
     pendingNext,
+    pendingNextQueued,
     pendingRaccoonTurns,
     polarBearSkip,
     actionMode: actionMode ? JSON.parse(JSON.stringify(actionMode)) : null,
@@ -61,6 +62,7 @@ function undoLast() {
   seaMode = s.seaMode;
   seaSource = s.seaSource;
   pendingNext = s.pendingNext;
+  pendingNextQueued = s.pendingNextQueued;
   pendingRaccoonTurns = s.pendingRaccoonTurns;
   polarBearSkip = s.polarBearSkip;
   actionMode = s.actionMode ? JSON.parse(JSON.stringify(s.actionMode)) : null;
@@ -79,6 +81,7 @@ let layoutPattern = [];
 
 // game state flags for card-specific abilities
 let pendingNext = null; // 'fox','lynx','tiger','lion','gator' - applies to the next predator only
+let pendingNextQueued = null; // queued to become active at end-of-turn
 let pendingRaccoonTurns = 0; // when >0 counts down at end-of-turn; value==1 means raccoon effect applies this turn
 let polarBearSkip = false; // when true, Polar Bear cannot be used to eat on the next turn
 let actionMode = null; // interactive ability resolution state
@@ -245,6 +248,7 @@ function initGame() {
   seaSource = -1;
   // clear ability and temporary state on restart
   pendingNext = null;
+  pendingNextQueued = null;
   pendingRaccoonTurns = 0;
   polarBearSkip = false;
   actionMode = null;
@@ -710,11 +714,11 @@ function runAbilityFor(cardId, cardIndex) {
       message = 'Raccoon activated: on your next turn, if you eat an animal exactly 1 lower, discard an unstacked animal.';
       break;
     case 9: // Fox
-      pendingNext = 'fox';
+      pendingNextQueued = 'fox';
       message = 'Fox: next predator must move diagonally 1 to eat.';
       break;
     case 10: // Lynx
-      pendingNext = 'lynx';
+      pendingNextQueued = 'lynx';
       message = 'Lynx: next predator must jump one card to eat (2 spaces orthogonal).';
       break;
     case 11: // Wolf
@@ -748,15 +752,15 @@ function runAbilityFor(cardId, cardIndex) {
       }
       break;
     case 12: // Tiger
-      pendingNext = 'tiger';
+      pendingNextQueued = 'tiger';
       message = 'Tiger: next predator may move two spaces (path allowed) to reach prey.';
       break;
     case 13: // Gator
-      pendingNext = 'gator';
+      pendingNextQueued = 'gator';
       message = 'Gator: next eat will reverse stacking (prey moves under eater).';
       break;
     case 14: // Lion
-      pendingNext = 'lion';
+      pendingNextQueued = 'lion';
       message = 'Lion: next predator must eat a prey valued exactly 1 less.';
       break;
     case 15: // Polar Bear
@@ -1198,6 +1202,14 @@ function checkEnd() {
 
   // If a sea action is mid-selection, don't end the game
   if (seaMode) return;
+
+  // Activate any queued next-turn ability now that the turn is ending
+  if (pendingNextQueued) {
+    pendingNext = pendingNextQueued;
+    pendingNextQueued = null;
+    // notify player that a next-turn ability is now active
+    message = 'Next-turn ability active: ' + pendingNext + '.';
+  }
 
   // End-of-turn cleanup for turn-based flags (only when no interactive modes are active)
   if (pendingRaccoonTurns > 0) pendingRaccoonTurns--;
