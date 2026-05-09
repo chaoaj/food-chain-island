@@ -598,6 +598,18 @@ function maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal) {
 // (because raccoon was started or predator was queued), false if predator
 // ability has been executed and caller should continue normal completion.
 function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSkip, predVal, preyVal) {
+  console.log('[handlePostEat] newIdx=', newIdx,
+    'prePendingNext=', prePendingNext,
+    'prePendingRaccoon=', prePendingRaccoon,
+    'prePolarBearSkip=', prePolarBearSkip,
+    'predVal=', predVal,
+    'preyVal=', preyVal,
+    'diff=', (predVal - preyVal),
+    'pendingRaccoonTurns=', pendingRaccoonTurns,
+    'queuedRaccoonDiscard=', queuedRaccoonDiscard,
+    'actionMode=', actionMode ? actionMode.type : null,
+    'lastEaterIndex=', lastEaterIndex,
+    'lastEatDiff=', lastEatDiff);
   // record the last eat diff for end-of-turn checks
   lastEatDiff = (predVal - preyVal);
 
@@ -614,10 +626,12 @@ function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSk
     if (actionMode) {
       queuedRaccoonDiscard = true;
       queuedPredatorAfterRaccoon = newIdx;
+      console.log('[handlePostEat] raccoon would trigger but actionMode active; queuedRaccoonDiscard=TRUE, queuedPredatorAfterRaccoon=', queuedPredatorAfterRaccoon);
     } else {
       actionMode = { type: 'raccoonDiscard' };
       message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
       queuedPredatorAfterRaccoon = newIdx;
+      console.log('[handlePostEat] raccoon started immediately; queuedPredatorAfterRaccoon=', queuedPredatorAfterRaccoon);
     }
     return true;
   }
@@ -625,6 +639,7 @@ function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSk
   // If raccoon was queued earlier (queuedRaccoonDiscard true), defer predator ability
   if (queuedRaccoonDiscard) {
     queuedPredatorAfterRaccoon = newIdx;
+    console.log('[handlePostEat] queuedRaccoonDiscard already set; deferring predator ability for newIdx=', newIdx);
     return true;
   }
 
@@ -899,6 +914,7 @@ function handleActionClick(i) {
   if (t === 'raccoonDiscard') {
     if (grid[i].length !== 1) { message = 'You must choose an UNSTACKED animal (single card).'; return; }
     recordState('raccoon-discard');
+    console.log('[raccoonDiscard] discarding at index', i, 'queuedPredatorAfterRaccoon=', queuedPredatorAfterRaccoon);
     grid[i] = [];
     actionMode = null;
     message = 'Raccoon discarded one unstacked animal.';
@@ -1316,6 +1332,7 @@ function checkEnd() {
   // Raccoon: if raccoon is active this turn and the most recent eat was exactly 1 less,
   // ensure Raccoon fires first by starting the discard now (if not already queued).
   if (pendingRaccoonTurns === 1 && lastEatDiff === 1 && !queuedRaccoonDiscard) {
+    console.log('[checkEnd] starting raccoon discard from checkEnd: pendingRaccoonTurns=', pendingRaccoonTurns, 'lastEatDiff=', lastEatDiff, 'queuedRaccoonDiscard=', queuedRaccoonDiscard, 'lastEaterIndex=', lastEaterIndex);
     actionMode = { type: 'raccoonDiscard' };
     message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
     if (queuedPredatorAfterRaccoon === -1 && lastEaterIndex !== -1) queuedPredatorAfterRaccoon = lastEaterIndex;
