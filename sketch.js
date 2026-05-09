@@ -34,10 +34,12 @@ function recordState(label) {
     pendingNext,
     pendingNextQueued,
     pendingRaccoonTurns,
+    pendingRaccoonQueued,
     polarBearSkip,
     actionMode: actionMode ? JSON.parse(JSON.stringify(actionMode)) : null,
     queuedRaccoonDiscard,
     lastEaterIndex,
+    lastEatDiff: typeof lastEatDiff !== 'undefined' ? lastEatDiff : null,
     seaUsed: { ...seaUsed },
     gameOver,
     message
@@ -64,10 +66,12 @@ function undoLast() {
   pendingNext = s.pendingNext;
   pendingNextQueued = s.pendingNextQueued;
   pendingRaccoonTurns = s.pendingRaccoonTurns;
+  pendingRaccoonQueued = s.pendingRaccoonQueued;
   polarBearSkip = s.polarBearSkip;
   actionMode = s.actionMode ? JSON.parse(JSON.stringify(s.actionMode)) : null;
   queuedRaccoonDiscard = s.queuedRaccoonDiscard;
   lastEaterIndex = s.lastEaterIndex;
+  lastEatDiff = s.lastEatDiff;
   seaUsed = { ...s.seaUsed };
   gameOver = s.gameOver;
   message = s.message || 'Undid previous action.';
@@ -83,11 +87,13 @@ let layoutPattern = [];
 let pendingNext = null; // 'fox','lynx','tiger','lion','gator' - applies to the next predator only
 let pendingNextQueued = null; // queued to become active at end-of-turn
 let pendingRaccoonTurns = 0; // when >0 counts down at end-of-turn; value==1 means raccoon effect applies this turn
+let pendingRaccoonQueued = false; // set when a Raccoon ability is used; becomes active next turn
 let polarBearSkip = false; // when true, Polar Bear cannot be used to eat on the next turn
 let actionMode = null; // interactive ability resolution state
 let queuedRaccoonDiscard = false; // when true, run raccoon discard after current actionMode completes
 let lastEaterIndex = -1; // index of the last eater (set by performEat) to ensure 'next' abilities only trigger for actual eaters
 let queuedPredatorAfterRaccoon = -1; // if set, run runAbilityAt(index) after raccoon discard completes
+let lastEatDiff = null; // difference (pred - prey) for the most recent eat this turn
 
 function preload() {
   // load numbered card images (0..15) from images/ and sea animals
@@ -267,10 +273,12 @@ function initGame() {
   pendingNext = null;
   pendingNextQueued = null;
   pendingRaccoonTurns = 0;
+  pendingRaccoonQueued = false;
   polarBearSkip = false;
   actionMode = null;
   queuedRaccoonDiscard = false;
   lastEaterIndex = -1;
+  lastEatDiff = null;
   message = 'Click a card to select a predator. Use sea animals on the right.';
   seaUsed = { whale: false, shark: false };
   gameOver = false;
@@ -560,15 +568,14 @@ function performEat(fromIdx, toIdx, options = { useGator: false }) {
   const preyStack = grid[toIdx].slice();
   const predStack = grid[fromIdx].slice();
   let resultIdx = -1;
-  if (options.useGator) {
-    // opposite stacking: move the eaten animal under the eater at the eater's location
-    grid[fromIdx] = preyStack.concat(predStack);
-    grid[toIdx] = [];
-    resultIdx = fromIdx; // predator remains at original index
-  } else {
-    grid[toIdx] = preyStack.concat(predStack);
-    grid[fromIdx] = [];
-    resultIdx = toIdx; // predator ends up at prey location
+    if (options.useGator) {
+      grid[fromIdx] = preyStack.concat(predStack);
+      grid[toIdx] = [];
+      resultIdx = fromIdx;
+    } else {
+      grid[toIdx] = preyStack.concat(predStack);
+      grid[fromIdx] = [];
+      resultIdx = toIdx;
   }
   // record which index just performed an eat so abilities that should only trigger for eaters can check
   lastEaterIndex = resultIdx;
@@ -581,9 +588,49 @@ function performEat(fromIdx, toIdx, options = { useGator: false }) {
 function maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal) {
   if (!prePendingRaccoon) return;
   if (predVal - preyVal === 1) {
-    if (actionMode) queuedRaccoonDiscard = true;
-    else { actionMode = { type: 'raccoonDiscard' }; message = 'Raccoon triggered: choose an UNSTACKED animal to discard.'; }
+    // Always start the raccoon discard action (we'll queue the predator ability to run after).
+    actionMode = { type: 'raccoonDiscard' };
+    message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
   }
+}
+
+// Centralized post-eat handler. Returns true if caller should return immediately
+// (because raccoon was started or predator was queued), false if predator
+// ability has been executed and caller should continue normal completion.
+function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSkip, predVal, preyVal) {
+  // record the last eat diff for end-of-turn checks
+  lastEatDiff = (predVal - preyVal);
+
+  // consume pre-turn flags that applied BEFORE this eat (except raccoon — it remains active for the whole turn
+  // until a matching eat occurs or the turn ends)
+  if (prePendingNext) pendingNext = null;
+  if (prePolarBearSkip) polarBearSkip = false;
+
+  // If raccoon was pending BEFORE this eat and this eat is exactly -1, trigger raccoon now
+  if (prePendingRaccoon && (predVal - preyVal === 1)) {
+    // consume the raccoon effect for this turn
+    pendingRaccoonTurns = 0;
+    // If we're currently resolving another ability, queue the raccoon discard; otherwise start it now.
+    if (actionMode) {
+      queuedRaccoonDiscard = true;
+      queuedPredatorAfterRaccoon = newIdx;
+    } else {
+      actionMode = { type: 'raccoonDiscard' };
+      message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
+      queuedPredatorAfterRaccoon = newIdx;
+    }
+    return true;
+  }
+
+  // If raccoon was queued earlier (queuedRaccoonDiscard true), defer predator ability
+  if (queuedRaccoonDiscard) {
+    queuedPredatorAfterRaccoon = newIdx;
+    return true;
+  }
+
+  // Otherwise run predator ability now
+  runAbilityAt(newIdx);
+  return false;
 }
 
 function getLayoutPattern(layoutId) {
@@ -698,7 +745,7 @@ function runAbilityFor(cardId, cardIndex) {
       else setAction({ type: 'snakeSwap', state: 'chooseA' }, 'Snake: choose two cards to swap.');
       break;
     case 8:
-      pendingRaccoonTurns = 2;
+      pendingRaccoonQueued = true;
       message = 'Raccoon activated: on your next turn, if you eat an animal exactly 1 lower, discard an unstacked animal.';
       break;
     case 9:
@@ -783,28 +830,12 @@ function handleActionClick(i) {
         // perform eat (respect gator stacking)
         const newIdx = performEat(src, i, { useGator: can.useGator });
 
-        // clear the one-time flags that applied BEFORE this eat (consume them)
-        if (prePendingNext) pendingNext = null;
-        if (prePendingRaccoon) pendingRaccoonTurns = 0;
-        if (prePolarBearSkip) polarBearSkip = false;
-
         // clear the current ability mode (we're replacing the moveOne flow)
         actionMode = null;
 
-        // raccoon trigger (centralized) — run BEFORE predator ability.
-        // If raccoon starts immediately, defer the predator ability until after the raccoon discard.
-        maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
-        if (actionMode && actionMode.type === 'raccoonDiscard') {
-          queuedPredatorAfterRaccoon = newIdx;
-          return;
-        }
-        if (queuedRaccoonDiscard) {
-          queuedPredatorAfterRaccoon = newIdx;
-          return;
-        }
-
-        // otherwise run predator ability now
-        runAbilityAt(newIdx);
+        // central post-eat handling (raccoon first; predator deferred if needed)
+        const early = handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSkip, predVal, preyVal);
+        if (early) return;
 
         // If no ability was set by the predator (or raccoon), finish the ability now.
         if (!actionMode) {
@@ -871,6 +902,8 @@ function handleActionClick(i) {
     grid[i] = [];
     actionMode = null;
     message = 'Raccoon discarded one unstacked animal.';
+    // clear the remembered last-eat diff so Raccoon won't re-trigger
+    lastEatDiff = null;
     // If a predator ability was deferred until after raccoon, run it now.
     if (queuedPredatorAfterRaccoon !== -1) {
       const idx = queuedPredatorAfterRaccoon;
@@ -1067,26 +1100,9 @@ function handleGridClick(i) {
       seaUsed.shark = true; seaMode = null; seaSource = -1;
       message = 'Shark used to help an animal eat. Continue.';
 
-      // clear pre-turn flags (consume flags that applied BEFORE this eat)
-      if (prePendingNext) pendingNext = null;
-      if (prePendingRaccoon) pendingRaccoonTurns = 0;
-      if (prePolarBearSkip) polarBearSkip = false;
-
-      // raccoon trigger (centralized) — run BEFORE predator ability.
-      maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
-      if (actionMode && actionMode.type === 'raccoonDiscard') {
-        queuedPredatorAfterRaccoon = newIdx;
-        checkEnd();
-        return;
-      }
-      if (queuedRaccoonDiscard) {
-        queuedPredatorAfterRaccoon = newIdx;
-        checkEnd();
-        return;
-      }
-
-      // otherwise run predator ability now
-      runAbilityAt(newIdx);
+      // central post-eat handling (raccoon first; predator deferred if needed)
+      const early = handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSkip, predVal, preyVal);
+      if (early) { checkEnd(); return; }
 
       checkEnd();
       return;
@@ -1115,26 +1131,11 @@ function handleGridClick(i) {
     const newIdx = performEat(seaSource, i, { useGator: false });
     seaUsed.shark = true; seaMode = null; seaSource = -1;
     message = 'Shark used to help an animal eat. Continue.';
-    // clear pre-turn flags (consume flags that applied BEFORE this eat)
-    if (prePendingNext) pendingNext = null;
-    if (prePendingRaccoon) pendingRaccoonTurns = 0;
-    if (prePolarBearSkip) polarBearSkip = false;
 
-    // raccoon trigger (centralized) — run BEFORE predator ability.
-    maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
-    if (actionMode && actionMode.type === 'raccoonDiscard') {
-      queuedPredatorAfterRaccoon = newIdx;
-      checkEnd();
-      return;
-    }
-    if (queuedRaccoonDiscard) {
-      queuedPredatorAfterRaccoon = newIdx;
-      checkEnd();
-      return;
-    }
+    // central post-eat handling (raccoon first; predator deferred if needed)
+    const early2 = handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSkip, predVal, preyVal);
+    if (early2) { checkEnd(); return; }
 
-    // otherwise run predator ability now
-    runAbilityAt(newIdx);
     checkEnd();
     return;
   }
@@ -1174,28 +1175,9 @@ function handleGridClick(i) {
   // perform eat; can.useGator toggles reversed stacking
   const newIdx = performEat(selected, i, { useGator: can.useGator });
 
-  // clear only those one-time flags that applied BEFORE this eat (consume them)
-  if (prePendingNext) pendingNext = null;
-  if (prePendingRaccoon) pendingRaccoonTurns = 0;
-  if (prePolarBearSkip) polarBearSkip = false;
-
-  // raccoon trigger (centralized) — run BEFORE predator ability.
-  maybeTriggerRaccoon(prePendingRaccoon, predVal, preyVal);
-  if (actionMode && actionMode.type === 'raccoonDiscard') {
-    queuedPredatorAfterRaccoon = newIdx;
-    selected = -1;
-    checkEnd();
-    return;
-  }
-  if (queuedRaccoonDiscard) {
-    queuedPredatorAfterRaccoon = newIdx;
-    selected = -1;
-    checkEnd();
-    return;
-  }
-
-  // otherwise run predator ability now
-  runAbilityAt(newIdx);
+  // central post-eat handling (raccoon first; predator deferred if needed)
+  const early = handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSkip, predVal, preyVal);
+  if (early) { selected = -1; checkEnd(); return; }
 
   selected = -1;
   checkEnd();
@@ -1331,6 +1313,15 @@ function checkEnd() {
   // If an interactive ability is currently being resolved, defer end-of-turn checks
   if (actionMode) return;
 
+  // Raccoon: if raccoon is active this turn and the most recent eat was exactly 1 less,
+  // ensure Raccoon fires first by starting the discard now (if not already queued).
+  if (pendingRaccoonTurns === 1 && lastEatDiff === 1 && !queuedRaccoonDiscard) {
+    actionMode = { type: 'raccoonDiscard' };
+    message = 'Raccoon triggered: choose an UNSTACKED animal to discard.';
+    if (queuedPredatorAfterRaccoon === -1 && lastEaterIndex !== -1) queuedPredatorAfterRaccoon = lastEaterIndex;
+    return;
+  }
+
   // If a raccoon discard was queued to run after an ability, start it now instead of ending
   if (queuedRaccoonDiscard) {
     queuedRaccoonDiscard = false;
@@ -1353,6 +1344,11 @@ function checkEnd() {
     pendingNext = pendingNextQueued;
     pendingNextQueued = null;
     message = 'Next-turn ability active: ' + pendingNext + '.';
+  }
+  // If a Raccoon was used this turn, activate it for the next turn now (queue -> turns counter)
+  if (pendingRaccoonQueued) {
+    pendingRaccoonTurns = 2;
+    pendingRaccoonQueued = false;
   }
   if (pendingRaccoonTurns > 0) pendingRaccoonTurns--;
 
