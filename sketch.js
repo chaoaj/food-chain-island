@@ -603,8 +603,8 @@ function canEat(fromIdx, toIdx, ignoreNextRules = false) {
     if (pendingNext === 'lynx') {
       // must jump exactly two orthogonal and there must be an animal in the middle cell
       if (!((dx === 2 && dy === 0) || (dx === 0 && dy === 2))) return { ok: false, msg: 'Lynx requires a jump over one animal (2 spaces orthogonal).' };
-      const midX = ax + (bx > ax ? 1 : -1);
-      const midY = ay + (by > ay ? 1 : -1);
+      const midX = Math.floor((ax + bx) / 2);
+      const midY = Math.floor((ay + by) / 2);
       if (midX < 0 || midX >= COLS || midY < 0 || midY >= ROWS) return { ok: false, msg: 'Lynx jump out of bounds.' };
       const midIdx = midY * COLS + midX;
       if (!grid[midIdx] || grid[midIdx].length === 0) return { ok: false, msg: 'Lynx jump requires an animal to jump over.' };
@@ -714,10 +714,14 @@ function handlePostEat(newIdx, prePendingNext, prePendingRaccoon, prePolarBearSk
 function getLayoutPattern(layoutId) {
   // returns a row-major boolean array of length ROWS*COLS marking which cells should be filled
   const patterns = {
-    // All layouts are 5x5 arrays (row-major). By default the last row
-    // is non-landable (Yellow) unless explicitly specified (see '2').
+    // Layouts are 5x5 arrays (row-major). 'true' = landable (X), 'false' = out-of-bounds (Y).
     '1': [
-      // default: 4x4 layout on the left side of a 5x5 board
+      // Default
+      // XXXX Y
+      // XXXX Y
+      // XXXX Y
+      // XXXX Y
+      // YYYYY
       true, true, true, true, false,
       true, true, true, true, false,
       true, true, true, true, false,
@@ -725,51 +729,81 @@ function getLayoutPattern(layoutId) {
       false, false, false, false, false
     ],
     '2': [
-      // zig (custom): XXYYY / XXXXY / XXXXY / XXXXY / YYXXY
-      true,  true,  false, false, false,
-      true,  true,  true,  true,  false,
-      true,  true,  true,  true,  false,
-      true,  true,  true,  true,  false,
-      false, false, true,  true,  false
+      // zig
+      // XXYYY
+      // XXXXY
+      // XXXXY
+      // XXXXY
+      // YYXXY
+      true, true, false, false, false,
+      true, true, true, true, false,
+      true, true, true, true, false,
+      true, true, true, true, false,
+      false, false, true, true, false
     ],
     '3': [
-      // circle (4-row pattern, last row Yellow)
-      false, true,  true,  true,  false,
-      true,  true,  true,  true,  true,
-      true,  true,  true,  true,  true,
-      false, true,  true,  true,  false,
+      // circle
+      // YXXXY
+      // XXXXX
+      // XXXXX
+      // YXXXY
+      // YYYYY
+      false, true, true, true, false,
+      true, true, true, true, true,
+      true, true, true, true, true,
+      false, true, true, true, false,
       false, false, false, false, false
     ],
     '4': [
-      // castle (4-row pattern, last row Yellow)
-      true,  false, true,  false, true,
-      true,  true,  true,  true,  true,
-      true,  true,  true,  true,  true,
-      true,  false, true,  false, true,
+      // castle
+      // XYXYX
+      // XXXXX
+      // XXXXX
+      // XYXYX
+      // YYYYY
+      true, false, true, false, true,
+      true, true, true, true, true,
+      true, true, true, true, true,
+      true, false, true, false, true,
       false, false, false, false, false
     ],
     '5': [
-      // columns (4-row pattern, last row Yellow)
-      true,  true,  true,  true,  true,
-      true,  false, true,  false, true,
-      true,  false, true,  false, true,
-      true,  true,  true,  true,  true,
+      // columns
+      // XXXXX
+      // XYXYX
+      // XYXYX
+      // XXXXX
+      // YYYYY
+      true, true, true, true, true,
+      true, false, true, false, true,
+      true, false, true, false, true,
+      true, true, true, true, true,
       false, false, false, false, false
     ],
     '6': [
-      // tower (4-row pattern, last row Yellow)
-      false, true,  true,  true,  false,
-      false, true,  true,  true,  false,
-      true,  true,  true,  true,  true,
-      true,  true,  true,  true,  true,
+      // tower
+      // YXXXY
+      // YXXXY
+      // XXXXX
+      // XXXXX
+      // YYYYY
+      false, true, true, true, false,
+      false, true, true, true, false,
+      true, true, true, true, true,
+      true, true, true, true, true,
       false, false, false, false, false
     ],
     '7': [
-      // right space (4-row pattern, last row Yellow)
-      false, true,  true,  true,  true,
-      true,  true,  true,  false, true,
-      true,  true,  true,  false, true,
-      false, true,  true,  true,  true,
+      // right space
+      // YXXXX
+      // XXXYX
+      // XXXYX
+      // YXXXX
+      // YYYYY
+      false, true, true, true, true,
+      true, true, true, false, true,
+      true, true, true, false, true,
+      false, true, true, true, true,
       false, false, false, false, false
     ]
   };
