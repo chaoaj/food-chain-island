@@ -461,9 +461,9 @@ function draw() {
         textSize(14 * uiScale);
         if (grid[i].length > 1) textStyle(BOLD);
         else textStyle(NORMAL);
-        textAlign(RIGHT, TOP);
+        textAlign(LEFT, TOP);
         let value = cardDefs[topId].value;
-        text(value, x + dispTileW - 8 * uiScale, y + 8 * uiScale);
+        text(value, x + 8 * uiScale, y + 8 * uiScale);  // upper-left so it does not cover the printed card number
         textStyle(NORMAL);
         pop();
       } else {
