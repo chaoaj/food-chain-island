@@ -16,7 +16,15 @@ let dispTileW, dispTileH;
 let pagePadding = 25;
 let gridX = pagePadding, gridY = 100, spacing = 10;
 let seaX, seaY;
+let sharkX, sharkY;        // shark card position (whale is at seaX, seaY)
+let seaW, seaH;            // sea card size
+let messageY = 0;          // y of the status message
+let messageX = 20, messageW = 300; // x / wrap width of the status message
+let uiScale = 1;           // text/badge scale relative to full-size tiles
+let toolbar = null;        // HTML toolbar that holds the buttons
+let lastPointerType = 'mouse';
 let seaOrientation = 'right';
+let titleSize = 20, legendSize = 12, titleY = 28, legendY = 50, legendStr = '';
 let seaUsed = { whale: false, shark: false };
 let gameOver = false;
 
@@ -151,8 +159,11 @@ function preload() {
 }
 
 function setup() {
-  canvasW = min(windowWidth, 1100);
-  canvasH = min(windowHeight, 800);
+  // Start tiny; layoutGame() sizes the canvas to fit once the toolbar exists.
+  // (Creating it full-width first made the page wider than the screen, which
+  // makes mobile Safari zoom out and throws the whole layout off.)
+  canvasW = 100;
+  canvasH = 100;
   createCanvas(canvasW, canvasH);
   // Debug panel is disabled for now to avoid UI clutter. Logs are still
   // collected via `pushDebug()`; a top-bar Copy Logs button is provided.
@@ -160,30 +171,13 @@ function setup() {
   debugContentDiv = null;
   try {
     copyLogsButton = createButton('Copy Logs');
-    // position next to other top-bar controls (Restart/Layout/Finish/Undo)
-    copyLogsButton.position(pagePadding + 445, pagePadding + 25);
-    copyLogsButton.style('font-size', '12px');
-    copyLogsButton.mousePressed(copyLogs);
+    onActivate(copyLogsButton, copyLogs);
   } catch (e) {
     console.warn('Could not create copyLogsButton:', e);
     copyLogsButton = null;
   }
-  // Ensure consistent touch/mouse mapping on mobile
-  const canvasElt = document.querySelector('canvas');
-  if (canvasElt) {
-    // prevent the browser from scrolling when interacting with the canvas
-    canvasElt.style.touchAction = 'none';
-    canvasElt.addEventListener('touchstart', function (e) {
-      if (!e.touches || e.touches.length === 0) return;
-      e.preventDefault();
-      const rect = canvasElt.getBoundingClientRect();
-      const scaleX = canvasElt.width / rect.width;
-      const scaleY = canvasElt.height / rect.height;
-      const x = (e.touches[0].clientX - rect.left) * scaleX;
-      const y = (e.touches[0].clientY - rect.top) * scaleY;
-      pointerPressed(x, y);
-    }, { passive: false });
-  }
+  // Unified input for mouse (desktop), finger (iPad/iPhone) and Apple Pencil.
+  setupCanvasInput();
   textFont('Arial');
 
   // use loaded card images; set canonical sheet tile size from first card
@@ -217,12 +211,11 @@ function setup() {
 
   // create UI button
   restartButton = createButton('Restart');
-  restartButton.position(pagePadding + 75, pagePadding + 25);
-  restartButton.mousePressed(initGame);
+  onActivate(restartButton, initGame);
 
   // layout selector for alternative starting boards
   layoutSelect = createSelect();
-  layoutSelect.position(pagePadding + 175, pagePadding + 25);
+  layoutSelect.attribute('aria-label', 'Board layout');
   layoutSelect.option('1 - Default', '1');
   layoutSelect.option('2 - Zig', '2');
   layoutSelect.option('3 - Circle', '3');
@@ -235,15 +228,27 @@ function setup() {
 
   // Finish button (evaluates final score / forces game end)
   finishButton = createButton('Finish');
-  finishButton.position(pagePadding + 295, pagePadding + 25);
-  finishButton.mousePressed(finishGame);
+  onActivate(finishButton, finishGame);
 
   // Undo button (disabled initially)
   undoButton = createButton('Undo');
-  undoButton.position(pagePadding + 365, pagePadding + 25);
-  undoButton.mousePressed(undoLast);
+  onActivate(undoButton, undoLast);
   undoButton.elt.disabled = true;
   undoButton.style('opacity', '0.5');
+
+  // Put all controls in one toolbar above the canvas (normal page flow), so
+  // they wrap on narrow screens and are always reachable on iPad/iPhone.
+  toolbar = createDiv();
+  toolbar.id('toolbar');
+  toolbar.attribute('role', 'toolbar');
+  toolbar.attribute('aria-label', 'Game controls');
+  [restartButton, layoutSelect, finishButton, undoButton, copyLogsButton].forEach(function (el) {
+    if (el) el.parent(toolbar);
+  });
+  const cnv = drawingContext.canvas;
+  cnv.parentNode.insertBefore(toolbar.elt, cnv);
+  cnv.setAttribute('role', 'img');
+  cnv.setAttribute('aria-label', 'Food Chain Island game board: a 5 by 5 grid of animal cards plus whale and shark sea cards.');
 
   initGame();
 }
@@ -267,64 +272,6 @@ function initGame() {
     }
   }
 
-  // layout variables (respect page padding)
-  gridX = pagePadding;
-  gridY = 100; // increased top offset
-  spacing = 10;
-
-  // Desired tile size: choose a sensible base per-row height (capped)
-  const baseTileH = Math.min(140, Math.max(36, Math.floor((windowHeight - 220) / ROWS)));
-  // Default visual scale: larger cards on desktop, but allow scaling to fit mobile
-  let desiredScale = 2; // originally doubled card size
-  dispTileH = Math.max(24, Math.floor(baseTileH * desiredScale));
-  dispTileW = Math.floor(dispTileH * (sheetTileW / sheetTileH));
-
-  seaX = gridX + COLS * (dispTileW + spacing) + 40;
-  seaY = gridY;
-
-  // Compute required canvas size to contain grid, sea area, and message area (with margin)
-  let requiredCanvasH = gridY + ROWS * (dispTileH + spacing) + 160;
-  const seaInfoWidth = dispTileW + 220; // room for sea image + description text
-  let requiredCanvasW = seaX + seaInfoWidth + 20;
-
-  // If the required canvas doesn't fit the viewport, compute a uniform scale factor and shrink tile sizes
-  const marginW = 32;
-  const marginH = 48;
-  const maxAvailableW = Math.max(320, windowWidth - marginW - pagePadding * 2);
-  const maxAvailableH = Math.max(240, windowHeight - marginH - pagePadding * 2);
-  const scaleFactor = Math.min(1, maxAvailableW / requiredCanvasW, maxAvailableH / requiredCanvasH);
-  if (scaleFactor < 1) {
-    dispTileH = Math.max(20, Math.floor(dispTileH * scaleFactor));
-    dispTileW = Math.floor(dispTileH * (sheetTileW / sheetTileH));
-    seaX = gridX + COLS * (dispTileW + spacing) + 24;
-    // recompute required dims after scaling
-    requiredCanvasH = gridY + ROWS * (dispTileH + spacing) + 140;
-    requiredCanvasW = seaX + (dispTileW + 200) + 20;
-  }
-
-  // Decide whether to place the sea panel to the right or below the grid to avoid overlaps
-  const seaPanelMinWidth = dispTileW + 180;
-  const spaceRight = Math.max(0, windowWidth - (gridX + COLS * (dispTileW + spacing) + 40));
-  if (spaceRight < seaPanelMinWidth) {
-    seaOrientation = 'below';
-    seaX = gridX;
-    seaY = gridY + ROWS * (dispTileH + spacing) + 30;
-    // for below orientation, ensure canvas height includes sea panel
-    requiredCanvasH = seaY + (dispTileH * 2) + 100;
-    requiredCanvasW = Math.max(requiredCanvasW, gridX + COLS * (dispTileW + spacing) + 20);
-  } else {
-    seaOrientation = 'right';
-    seaX = gridX + COLS * (dispTileW + spacing) + 40;
-    seaY = gridY;
-    requiredCanvasH = gridY + ROWS * (dispTileH + spacing) + 160;
-    requiredCanvasW = seaX + (dispTileW + 200) + 20;
-  }
-
-  // Final canvas fits the content (and should now be <= viewport in most cases)
-  canvasW = Math.max(320, Math.min(requiredCanvasW, windowWidth - pagePadding * 2));
-  canvasH = Math.max(240, Math.min(requiredCanvasH, windowHeight - pagePadding * 2));
-  resizeCanvas(canvasW, canvasH);
-
   selected = -1;
   seaMode = null;
   seaSource = -1;
@@ -346,43 +293,111 @@ function initGame() {
   history = [];
   updateUndoButton();
 
-  // Reposition UI elements to account for layout/resize (keep +75px horizontal offset)
-  // On narrow viewports stack controls for easier tapping
-  const isMobileLayout = windowWidth <= 600 || canvasW <= 600;
-  if (isMobileLayout) {
-    if (restartButton) restartButton.position(pagePadding, pagePadding + 6).style('font-size', '18px');
-    if (layoutSelect) layoutSelect.position(pagePadding, pagePadding + 56).style('width', '180px');
+  layoutGame();
+}
+
+// Compute tile sizes, canvas size and control positions for the current
+// viewport. Does NOT touch game state, so it is safe to call on resize/rotate.
+function layoutGame() {
+  const cs = window.getComputedStyle(document.body);
+  const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+  const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
+  // Toolbar is either a row above the canvas or (short landscape phones) a
+  // column to its left; subtract whichever dimension it takes up.
+  const tbRect = toolbar ? toolbar.elt.getBoundingClientRect() : { width: 0, height: 0 };
+  const tbColumn = toolbar && window.getComputedStyle(toolbar.elt).flexDirection === 'column';
+  const tbH = toolbar && !tbColumn ? tbRect.height + 8 : 0;
+  const tbW = tbColumn ? tbRect.width + 8 : 0;
+  // window.innerHeight tracks Safari's visible area as its toolbars show/hide
+  const vw = document.documentElement.clientWidth || window.innerWidth || windowWidth;
+  const vh = window.innerHeight || windowHeight;
+  const availW = Math.max(300, Math.floor(vw - padL - padR - tbW));
+  // small safety margin so the board never sits under the browser's bottom bar
+  const availH = Math.max(240, Math.floor(vh - padT - padB - tbH - 10));
+
+  const m = availW < 500 ? 10 : 20;          // inner margin
+  gridX = m;
+  spacing = availW < 500 ? 6 : 10;
+  const aspect = sheetTileW / sheetTileH;   // card width / height
+
+  // Header: title + legend, sized to fit the width
+  textFont('Arial');
+  const titleStr = 'Food Chain Island — Solo (playable demo)';
+  textSize(20);
+  titleSize = Math.max(12, Math.min(22, Math.floor(20 * (availW - 2 * m) / textWidth(titleStr))));
+  legendSize = availW < 500 ? 11 : 12;
+  textSize(legendSize);
+  const fullLegend = 'Yellow = pass-through (cannot land). Use the layout selector to preview.';
+  legendStr = textWidth(fullLegend) <= availW - 2 * m ? fullLegend : 'Yellow = pass-through (cannot land).';
+  const compact = availH < 420;              // e.g. iPhone in landscape
+  if (compact) {
+    // drop the title (it is in the browser tab) to give the cards more room
+    titleSize = 0;
+    titleY = 0;
+    legendY = legendSize + 4;
+    gridY = legendY + 12;
   } else {
-    if (restartButton) restartButton.position(pagePadding + 75, pagePadding + 25).style('font-size', '16px');
-    if (layoutSelect) layoutSelect.position(pagePadding + 175, pagePadding + 25).style('width', '120px');
+    titleY = 8 + titleSize;                  // baseline
+    legendY = titleY + legendSize + 10;      // baseline
+    gridY = legendY + 18;
   }
-  // position finish button under the grid
-  if (finishButton) {
-    // compute whale/shark image height to mirror draw() positioning when sea panel is below
-    const whaleW = dispTileW;
-    const whaleH = Math.floor(whaleW * (sheetTileH / sheetTileW));
-    let messageY = gridY + ROWS * (dispTileH + spacing) + 20;
-    if (seaOrientation === 'below') {
-      const bottomSea = seaY + whaleH + 12;
-      messageY = bottomSea + 20;
+
+  const msgH = compact ? 40 : 54;  // room for the status message
+  const seaLabelH = 24;  // "Sea Animals" label
+  const pad = 12;        // frame drawn around each card (6px each side)
+
+  // Option A: sea cards in a column to the right of the grid
+  const hRightW = (availW - 2 * m - 5 * spacing - 30 - pad) / 6 / aspect;
+  // in compact mode the message goes in the column under the sea cards
+  const hRightH = (availH - gridY - 5 * spacing - (compact ? 0 : msgH)) / 5;
+  const hRight = Math.min(hRightW, hRightH);
+  // Option B: sea cards side by side below the grid
+  const hBelowW = (availW - 2 * m - 4 * spacing) / 5 / aspect;
+  const hBelowH = (availH - gridY - 5 * spacing - seaLabelH - pad - msgH) / 6;
+  const hBelow = Math.min(hBelowW, hBelowH);
+
+  seaOrientation = hRight >= hBelow ? 'right' : 'below';
+  dispTileH = Math.floor(Math.max(30, Math.min(260, Math.max(hRight, hBelow))));
+  dispTileW = Math.floor(dispTileH * aspect);
+  uiScale = Math.max(0.6, Math.min(1, dispTileH / 140));
+
+  seaW = dispTileW;
+  seaH = dispTileH;
+  const gridBottom = gridY + ROWS * (dispTileH + spacing);
+  if (seaOrientation === 'right') {
+    seaX = gridX + COLS * (dispTileW + spacing) + 24;
+    seaY = gridY + seaLabelH;
+    sharkX = seaX;
+    sharkY = seaY + seaH + 18;
+    messageY = Math.max(gridBottom, sharkY + seaH + 6) + 8;
+    messageX = gridX;
+    messageW = availW - gridX * 2;
+    if (compact) {
+      messageX = seaX - 6;
+      messageY = sharkY + seaH + 14;
+      messageW = Math.max(120, availW - messageX - 6);
     }
-    const finishY = messageY + 91; // move finish button further down by 25px
-    const finishX = isMobileLayout ? pagePadding : gridX + 75;
-    finishButton.position(finishX, finishY).style('font-size', isMobileLayout ? '18px' : '16px');
-    if (undoButton) {
-      if (isMobileLayout) undoButton.position(finishX + 140, finishY).style('font-size', '18px');
-      else {
-        // position undo to the right of finish (try to use actual button width)
-        const finishW = (finishButton.elt && finishButton.elt.getBoundingClientRect) ? finishButton.elt.getBoundingClientRect().width : 80;
-        undoButton.position(finishX + finishW + 8, finishY).style('font-size', '16px');
-      }
-    }
+  } else {
+    seaX = gridX;
+    seaY = gridBottom + seaLabelH + 6;
+    sharkX = seaX + seaW + 24;
+    sharkY = seaY;
+    messageY = seaY + seaH + 14;
+    messageX = gridX;
+    messageW = availW - gridX * 2;
   }
+
+  canvasW = availW;
+  const msgBottom = (compact && seaOrientation === 'right') ? messageY + 20 : messageY + msgH;
+  canvasH = Math.max(200, Math.ceil(Math.max(gridBottom + 4, msgBottom)));
+  resizeCanvas(canvasW, canvasH);
 }
 
 function windowResized() {
-  // Recompute layout and resize canvas for the new viewport
-  initGame();
+  // Recompute layout for the new viewport WITHOUT restarting the game.
+  // (On iPhone/iPad this fires on rotation and when Safari's toolbar
+  // shows/hides while scrolling, which used to reshuffle the board.)
+  layoutGame();
 }
 
 function draw() {
@@ -392,13 +407,17 @@ function draw() {
 
   // title
   fill(30);
-  textSize(20);
-  text('Food Chain Island — Solo (playable demo)', gridX, 40);
+  noStroke();
+  textAlign(LEFT, BASELINE);
+  if (titleSize > 0) {
+    textSize(titleSize);
+    text('Food Chain Island — Solo (playable demo)', gridX, titleY);
+  }
 
   // legend for layout tiles (moved down 10px)
-  textSize(12);
+  textSize(legendSize);
   fill(60);
-  text('Yellow = pass-through (cannot land). Use the layout selector to preview.', gridX, 74);
+  text(legendStr, gridX, legendY);
 
   // draw grid
   for (let r = 0; r < ROWS; r++) {
@@ -426,11 +445,12 @@ function draw() {
         if (grid[i].length > 1) {
           fill(0, 150);
           noStroke();
-          rect(x + dispTileW - 38, y + dispTileH - 28, 34, 22, 6);
+          const bw = 34 * uiScale, bh = 22 * uiScale;
+          rect(x + dispTileW - bw - 4, y + dispTileH - bh - 6, bw, bh, 6);
           fill(255);
-          textSize(14);
+          textSize(14 * uiScale);
           textAlign(CENTER, CENTER);
-          text(grid[i].length, x + dispTileW - 21, y + dispTileH - 17);
+          text(grid[i].length, x + dispTileW - 4 - bw / 2, y + dispTileH - 6 - bh / 2);
         }
 
         // value label (bold when stacked)
@@ -438,12 +458,12 @@ function draw() {
         fill(255);
         stroke(0, 120);
         strokeWeight(2);
-        textSize(14);
+        textSize(14 * uiScale);
         if (grid[i].length > 1) textStyle(BOLD);
         else textStyle(NORMAL);
         textAlign(RIGHT, TOP);
         let value = cardDefs[topId].value;
-        text(value, x + dispTileW - 8, y + 8);
+        text(value, x + dispTileW - 8 * uiScale, y + 8 * uiScale);
         textStyle(NORMAL);
         pop();
       } else {
@@ -473,7 +493,8 @@ function draw() {
         }
       }
       // detect hover for tooltip
-      if (mouseX >= x && mouseX <= x + dispTileW && mouseY >= y && mouseY <= y + dispTileH) {
+      const hoverAllowed = lastPointerType === 'mouse' || mouseIsPressed;
+      if (hoverAllowed && mouseX >= x && mouseX <= x + dispTileW && mouseY >= y && mouseY <= y + dispTileH) {
         hoveredCard = i;
       }
     }
@@ -485,13 +506,16 @@ function draw() {
   textAlign(LEFT, TOP);
   textSize(14);
   fill(0);
-  text('Sea Animals (one-time each):', seaX, seaY - 30);
+  noStroke();
+  textSize(Math.max(11, 14 * uiScale));
+  const seaLabel = seaOrientation === 'right' && textWidth('Sea Animals (one-time each):') > width - seaX - 4 ? 'Sea (once each):' : 'Sea Animals (one-time each):';
+  text(seaLabel, seaX - 6, seaY - 24);
 
   // whale
-  let whaleW = dispTileW;
-  let whaleH = Math.floor(whaleW * (sheetTileH / sheetTileW));
+  let whaleW = seaW;
+  let whaleH = seaH;
   let wy = seaY;
-  // (sea animal descriptions removed per user request)
+  strokeWeight(1);
   // draw whale image
   if (!seaUsed.whale) {
     image(seaSprites.whale, seaX, wy, whaleW, whaleH);
@@ -513,39 +537,36 @@ function draw() {
   textAlign(LEFT, TOP);
 
   // shark
-  let sy = wy + whaleH + 18;
-  // (sea animal descriptions removed per user request)
+  strokeWeight(1);
   // draw shark image
   if (!seaUsed.shark) {
-    image(seaSprites.shark, seaX, sy, whaleW, whaleH);
+    image(seaSprites.shark, sharkX, sharkY, whaleW, whaleH);
   } else {
     tint(200, 200);
-    image(seaSprites.shark, seaX, sy, whaleW, whaleH);
+    image(seaSprites.shark, sharkX, sharkY, whaleW, whaleH);
     noTint();
   }
   stroke(0);
   noFill();
-  rect(seaX - 6, sy - 6, whaleW + 12, whaleH + 12, 8);
+  rect(sharkX - 6, sharkY - 6, whaleW + 12, whaleH + 12, 8);
   if (seaMode === 'shark') {
     noFill();
     stroke(40, 180, 40);
     strokeWeight(3);
-    rect(seaX - 6, sy - 6, whaleW + 12, whaleH + 12, 8);
+    rect(sharkX - 6, sharkY - 6, whaleW + 12, whaleH + 12, 8);
   }
   // reset alignment after drawing
   textAlign(LEFT, TOP);
 
   // message
   fill(20);
-  textSize(16);
+  noStroke();
+  strokeWeight(1);
+  textSize(width < 500 ? 14 : 16);
   textAlign(LEFT, TOP);
-  // position the message below the grid or below the sea panel when collapsed
-  let messageY = gridY + ROWS * (dispTileH + spacing) + 20;
-  if (seaOrientation === 'below') {
-    const bottomSea = sy + whaleH + 12;
-    messageY = bottomSea + 20;
-  }
-  text(message, gridX, messageY);
+  textWrap(WORD);
+  // messageY is computed in layoutGame(); wrap to the canvas width
+  text(message, messageX, messageY, messageW);
 
   // DEBUG PANEL DISABLED
   // The on-screen debug panel is currently hidden to avoid UI clutter.
@@ -566,11 +587,12 @@ function draw() {
     fill(0, 180);
     rect(0, 0, width, height);
     fill(255);
-    textSize(28);
+    textSize(width < 500 ? 20 : 28);
     textAlign(CENTER, CENTER);
-    text(message, width / 2, height / 2 - 20);
+    textWrap(WORD);
+    text(message, 10, height / 2 - 80, width - 20, 100);
     textSize(16);
-    text('Click Restart to play again.', width / 2, height / 2 + 30);
+    text('Tap or click Restart to play again.', 10, height / 2 + 30, width - 20, 40);
   }
 }
 
@@ -1069,7 +1091,10 @@ function handleActionClick(i) {
 function drawTooltip(x, y, textStr) {
   push();
   textSize(14);
-  const w = 260; const h = 60;
+  const w = Math.min(260, width - 8); const h = 60;
+  // keep the tooltip on screen (important on phones)
+  if (x + w > width - 4) x = Math.max(4, width - w - 4);
+  if (y + h > height - 4) y = Math.max(4, height - h - 4);
   fill(255, 245);
   stroke(0);
   rect(x, y, w, h, 6);
@@ -1081,19 +1106,77 @@ function drawTooltip(x, y, textStr) {
   pop();
 }
 
-function mousePressed() {
-  // use pointerPressed with p5 mouse coords
-  pointerPressed(mouseX, mouseY);
+// Attach a click/tap handler that works for mouse, touch and keyboard.
+function onActivate(btn, fn) {
+  if (!btn || !btn.elt) return;
+  btn.elt.addEventListener('click', function (e) {
+    e.preventDefault();
+    fn();
+  });
+}
+
+// Convert a client (screen) point into p5 canvas coordinates.
+// Uses the canvas's CSS size vs. its p5 logical size (width/height), NOT
+// elt.width/elt.height, which are multiplied by pixelDensity (2-3x on
+// Retina iPads/iPhones) and made every tap land in the wrong place.
+function clientToCanvas(canvasElt, clientX, clientY) {
+  const rect = canvasElt.getBoundingClientRect();
+  const sx = rect.width > 0 ? width / rect.width : 1;
+  const sy = rect.height > 0 ? height / rect.height : 1;
+  return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
+}
+
+function setupCanvasInput() {
+  const canvasElt = (typeof drawingContext !== 'undefined' && drawingContext.canvas) || document.querySelector('canvas');
+  if (!canvasElt) return;
+  // Stop the browser from scrolling/zooming/selecting when tapping the board
+  canvasElt.style.touchAction = 'none';
+  canvasElt.style.webkitUserSelect = 'none';
+  canvasElt.style.userSelect = 'none';
+  canvasElt.style.webkitTouchCallout = 'none';
+
+  const handle = function (clientX, clientY) {
+    const pt = clientToCanvas(canvasElt, clientX, clientY);
+    pointerPressed(pt.x, pt.y);
+  };
+
+  if (window.PointerEvent) {
+    canvasElt.addEventListener('pointerdown', function (e) {
+      if (!e.isPrimary) return;                                 // ignore extra fingers
+      lastPointerType = e.pointerType || 'mouse';
+      if (e.pointerType === 'mouse' && e.button !== 0) return;  // left click only
+      e.preventDefault();
+      handle(e.clientX, e.clientY);
+    }, { passive: false });
+  } else {
+    // Fallback for very old browsers without Pointer Events
+    let lastTouch = 0;
+    canvasElt.addEventListener('touchstart', function (e) {
+      if (!e.changedTouches || e.changedTouches.length === 0) return;
+      e.preventDefault();
+      lastTouch = Date.now();
+      lastPointerType = 'touch';
+      handle(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    }, { passive: false });
+    canvasElt.addEventListener('mousedown', function (e) {
+      if (Date.now() - lastTouch < 800 || e.button !== 0) return;
+      handle(e.clientX, e.clientY);
+    });
+  }
+  canvasElt.addEventListener('pointermove', function (e) {
+    if (e.pointerType === 'mouse') lastPointerType = 'mouse';
+  });
+  // Block the long-press context menu (iOS "Save Image" sheet) on the board
+  canvasElt.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 }
 
 function pointerPressed(px, py) {
   if (gameOver) return;
 
   // detect clicking sea animals
-  let whaleW = dispTileW;
-  let whaleH = Math.floor(whaleW * (sheetTileH / sheetTileW));
+  let whaleW = seaW;
+  let whaleH = seaH;
   let wy = seaY;
-  let sy = wy + whaleH + 18;
 
   if (px >= seaX - 6 && px <= seaX - 6 + whaleW + 12 && py >= wy - 6 && py <= wy - 6 + whaleH + 12) {
     if (!seaUsed.whale) {
@@ -1111,7 +1194,7 @@ function pointerPressed(px, py) {
     return;
   }
 
-  if (px >= seaX - 6 && px <= seaX - 6 + whaleW + 12 && py >= sy - 6 && py <= sy - 6 + whaleH + 12) {
+  if (px >= sharkX - 6 && px <= sharkX - 6 + whaleW + 12 && py >= sharkY - 6 && py <= sharkY - 6 + whaleH + 12) {
     if (!seaUsed.shark) {
       // Selecting a sea animal cancels any currently active ability resolution
       if (actionMode || queuedRaccoonDiscard || selected !== -1) {

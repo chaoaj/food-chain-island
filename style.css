@@ -1,25 +1,79 @@
 html, body {
   margin: 0;
-  padding: 25px;
+  padding: 16px;
+  /* keep content clear of the iPhone notch / home indicator */
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
   box-sizing: border-box;
+  background: #c8f5dc;
+  -webkit-text-size-adjust: 100%;
 }
+html { padding: 0; }
 
 canvas {
   display: block;
-  width: 100%;
-  height: auto;
-  touch-action: manipulation;
+  touch-action: none;           /* taps go to the game, no scroll/zoom */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;  /* no "Save Image" sheet on long-press */
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Make UI controls easier to tap on small screens */
-button {
-  padding: 8px 12px;
-  font-size: 16px;
-  -webkit-tap-highlight-color: rgba(0,0,0,0);
+/* Controls bar above the board (wraps on narrow screens) */
+#toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#toolbar button,
+#toolbar select {
+  min-height: 44px;             /* Apple / WCAG 2.5.5 touch-target size */
+  padding: 8px 14px;
+  font-size: 16px;              /* 16px+ stops iOS zooming into the select */
+  border: 1px solid #555;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  touch-action: manipulation;   /* no double-tap zoom delay */
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+#toolbar button:disabled { cursor: not-allowed; }
+
+#toolbar button:focus-visible,
+#toolbar select:focus-visible {
+  outline: 3px solid #0b5fff;
+  outline-offset: 2px;
 }
 
 @media (max-width: 600px) {
-  html, body { padding: 12px; }
-  button { padding: 12px 16px; font-size: 18px; }
-  select { font-size: 16px; padding: 8px 10px; }
+  html, body {
+    padding: 8px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+  html { padding: 0; }
+  #toolbar button, #toolbar select { padding: 8px 10px; }
+}
+
+/* Short landscape screens (iPhone sideways): controls in a column on the
+   left so the board gets the full height */
+@media (orientation: landscape) and (max-height: 500px) {
+  html, body { padding-top: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  html { padding: 0; }
+  main { display: flex; align-items: flex-start; gap: 8px; }
+  #toolbar {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    margin-bottom: 0;
+    gap: 6px;
+  }
+  #toolbar button, #toolbar select { padding: 6px 10px; font-size: 16px; }
+  #toolbar select { max-width: 130px; }
 }
